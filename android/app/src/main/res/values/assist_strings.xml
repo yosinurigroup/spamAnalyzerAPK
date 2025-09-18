@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Text shown in Settings > Accessibility for your service -->
+    <string name="accessibility_service_desc">
+        Allow this service to capture the screen for caller overlays.
+    </string>
+
+    <!-- Used by overlay_call_box.xml -->
+    <string name="close">Close</string>
+</resources>

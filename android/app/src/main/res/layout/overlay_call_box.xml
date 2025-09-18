@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="200dp"
+    android:padding="12dp"
+    android:layout_margin="12dp">
+
+    <RelativeLayout
+        android:id="@+id/overlay_root"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:padding="12dp"
+        android:background="@drawable/overlay_background"
+        android:elevation="20dp">
+
+        <ImageView
+            android:id="@+id/close_button"
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:layout_alignParentTop="true"
+            android:layout_alignParentEnd="true"
+            android:layout_marginTop="4dp"
+            android:layout_marginEnd="4dp"
+            android:padding="4dp"
+            android:background="@drawable/circle_bg"
+            android:src="@android:drawable/ic_menu_close_clear_cancel"
+            android:tint="#FFFFFF"
+            android:contentDescription="Close" />
+
+        <TextView
+            android:id="@+id/app_name"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Call Detector"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:layout_alignParentStart="true"
+            android:layout_marginStart="8dp" />
+
+        <TextView
+            android:id="@+id/caller_number"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Call from: Unknown"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:layout_alignParentStart="true"
+            android:layout_below="@id/app_name"
+            android:layout_marginTop="2dp"
+            android:layout_marginStart="8dp" />
+
+        <TextView
+            android:id="@+id/call_id"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="ID: loading..."
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:layout_alignParentStart="true"
+            android:layout_below="@id/caller_number"
+            android:layout_marginTop="4dp"
+            android:layout_marginStart="8dp" />
+
+        <TextView
+            android:id="@+id/call_time"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Time: loading..."
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:layout_alignParentStart="true"
+            android:layout_below="@id/call_id"
+            android:layout_marginTop="2dp"
+            android:layout_marginStart="8dp" />
+
+        <TextView
+            android:id="@+id/call_to"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="To: loading..."
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:layout_alignParentStart="true"
+            android:layout_below="@id/call_time"
+            android:layout_marginTop="2dp"
+            android:layout_marginStart="8dp" />
+
+        <TextView
+            android:id="@+id/carrier"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Carrier: loading..."
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:layout_alignParentStart="true"
+            android:layout_below="@id/call_to"
+            android:layout_marginTop="2dp"
+            android:layout_marginStart="8dp" />
+    </RelativeLayout>
+</FrameLayout>

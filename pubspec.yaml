@@ -1,0 +1,48 @@
+name: spam_analyzer_v6
+description: A new Flutter project.
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.7.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+  # For call state detection
+  phone_state: ^2.1.1
+
+  # For requesting runtime permissions
+  permission_handler: ^12.0.1
+  contacts_service_plus: ^0.0.2
+  photo_view: ^0.15.0
+  google_fonts: ^6.2.1
+  animated_text_kit: ^4.2.3
+  android_intent_plus: ^5.3.0
+  flutter_local_notifications: ^19.4.0
+  get_storage: ^2.1.1
+  get: ^4.7.2
+  lottie: ^3.3.1
+  http: ^1.4.0
+  image_picker: ^1.1.2
+  path: ^1.9.1
+  path_provider: ^2.1.5
+  cached_network_image: ^3.4.1
+  intl: ^0.20.2
+  connectivity_plus: ^6.1.5
+  internet_connection_checker_plus: ^2.7.2
+  shared_preferences: ^2.5.3
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/
+    

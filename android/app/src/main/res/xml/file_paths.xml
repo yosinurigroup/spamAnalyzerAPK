@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Internal app storage -->
+    <files-path name="files_root" path="." />
+    <cache-path name="cache_root" path="." />
+
+    <!-- App-specific external (scoped) storage -->
+    <external-files-path name="external_pictures" path="Pictures/" />
+    <external-files-path name="spam_analyzer_dir" path="Pictures/SpamAnalyzer/" />
+
+    <!-- Optional legacy wide external (pre-scoped). Not required, but harmless. -->
+    <external-path name="external_storage_root" path="." />
+</paths>
