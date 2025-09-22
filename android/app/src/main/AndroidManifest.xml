@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest package="com.example.spam_analyzer_v6"
-    xmlns:android="http://schemas.android.com/apk/res/android">
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Core permissions -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
@@ -18,10 +19,24 @@
     <!-- Foreground services -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- DO NOT use phoneCall type (will crash if not dialer)
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
+    -->
+
+    <!-- Battery optimization request -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <!-- Legacy storage (pre-29) -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+
+    <!-- Shizuku (binding permission) -->
+    <uses-permission android:name="moe.shizuku.manager.permission.REQUEST_BIND" />
+
+    <!-- ⚡ Extra secure permissions (grant via Shizuku/ADB only) -->
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" tools:ignore="ProtectedPermissions"/>
+    <uses-permission android:name="android.permission.DUMP" tools:ignore="ProtectedPermissions"/>
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
     <application
         android:label="Spam Analyzer"
@@ -32,7 +47,7 @@
         android:enableOnBackInvokedCallback="true"
         android:networkSecurityConfig="@xml/network_security_config">
 
-        <!-- FileProvider (optional) -->
+        <!-- FileProvider -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -61,7 +76,7 @@
             </intent-filter>
         </activity>
 
-        <!-- PHONE_STATE receiver (your own implementation) -->
+        <!-- PHONE_STATE receiver -->
         <receiver
             android:name=".CallReceiver"
             android:enabled="true"
@@ -88,21 +103,33 @@
             android:name=".CallOverlayService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="dataSync"
-            android:stopWithTask="false" />
+            android:foregroundServiceType="dataSync" />
 
-        <!-- Call watcher foreground service -->
         <service
             android:name=".CallStateWatcherService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <!-- Accessibility watchdog -->
+        <service
+            android:name=".AccessibilityWatchdogService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <!-- Heartbeat receiver (explicit alarms) -->
+        <receiver
+            android:name=".WatchdogAlarmReceiver"
+            android:enabled="true"
+            android:exported="false" />
+
         <!-- Accessibility screenshot service -->
         <service
             android:name=".AssistCaptureService"
             android:exported="true"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:process=":assist">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
             </intent-filter>

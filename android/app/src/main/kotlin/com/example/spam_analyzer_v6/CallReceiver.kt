@@ -37,14 +37,15 @@ class CallReceiver : BroadcastReceiver() {
                     if (!rawNumber.isNullOrEmpty()) latestIncomingNumber = rawNumber
                     val displayNumber = rawNumber ?: latestIncomingNumber ?: "Unknown"
 
+                    // Flutter stream
                     try { channel?.invokeMethod("incomingCall", displayNumber) } catch (_: Throwable) {}
 
+                    // Build overlay meta used by AssistCaptureService
                     val callId = UUID.randomUUID().toString()
                     val formattedTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
                     val callTo = MainActivity.storedCallTo ?: "Personal"
                     val carrier = MainActivity.storedCarrier ?: "defaultCarrier"
 
-                    // 🔹 overlay meta ko global store karo — AssistCaptureService ye hi read karega
                     LastOverlayInfo.set(
                         incomingNumber = displayNumber,
                         callId = callId,
@@ -53,7 +54,25 @@ class CallReceiver : BroadcastReceiver() {
                         carrier = carrier
                     )
 
-                    // (optional) overlay dikhana
+                    // ✅ NEW: force-refresh keywords as soon as phone rings
+                    // Try direct helper (if service instance is already alive)…
+                    try {
+                        AssistCaptureService.onCallRinging()
+                    } catch (_: Throwable) {
+                        // ignore
+                    }
+                    // …and also send an explicit startService with action to be safe.
+                    try {
+                        val svcIntent = Intent(context.applicationContext, AssistCaptureService::class.java).apply {
+                            action = AssistCaptureService.ACTION_REFRESH_KEYWORDS
+                        }
+                        context.startService(svcIntent)
+                        Log.i(TAG, "RINGING → requested keywords refresh via service action")
+                    } catch (t: Throwable) {
+                        Log.w(TAG, "Could not start AssistCaptureService for keywords refresh: ${t.message}")
+                    }
+
+                    // (optional) show overlay
                     val overlayIntent = Intent(context.applicationContext, CallOverlayService::class.java).apply {
                         putExtra("incomingNumber", displayNumber)
                         putExtra("callId", callId)
@@ -69,6 +88,7 @@ class CallReceiver : BroadcastReceiver() {
                         }
                     } catch (_: Throwable) {}
 
+                    // Throttle duplicate RINGING
                     val now = SystemClock.elapsedRealtime()
                     if (now - lastRingAt < MIN_GAP_MS) {
                         Log.d(TAG, "RINGING duplicate throttle → skip")
@@ -76,6 +96,7 @@ class CallReceiver : BroadcastReceiver() {
                     }
                     lastRingAt = now
 
+                    // Schedule screenshot capture after a short delay
                     val sessionId = "${displayNumber}-${now}"
                     context.sendBroadcast(
                         Intent(AssistCaptureService.ACTION_CAPTURE_NOW).apply {
@@ -87,7 +108,10 @@ class CallReceiver : BroadcastReceiver() {
                     Log.d(TAG, "RINGING → requested accessibility capture (sid=$sessionId, +1500ms)")
                 }
 
-                TelephonyManager.EXTRA_STATE_OFFHOOK -> { /* no-op */ }
+                TelephonyManager.EXTRA_STATE_OFFHOOK -> {
+                    // no-op for now
+                }
+
                 TelephonyManager.EXTRA_STATE_IDLE -> {
                     try { channel?.invokeMethod("callEnded", "") } catch (_: Throwable) {}
                     try { context.stopService(Intent(context, CallOverlayService::class.java)) } catch (_: Throwable) {}

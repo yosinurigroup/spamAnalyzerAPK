@@ -9,7 +9,6 @@ import android.content.IntentFilter
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.Environment
 import android.provider.Settings
 import android.telephony.TelephonyManager
 import android.util.Log
@@ -33,16 +32,12 @@ class MainActivity : FlutterActivity() {
 
     private var channel: MethodChannel? = null
     private var captureResultReceiver: BroadcastReceiver? = null
+    private var startedServicesOnce = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // optional: start your call watcher foreground service
-        try {
-            val svc = Intent(this, CallStateWatcherService::class.java)
-            ContextCompat.startForegroundService(this, svc)
-        } catch (_: Throwable) {}
-
+        // Receiver to bubble accessibility capture results back to Flutter
         captureResultReceiver = object : BroadcastReceiver() {
             override fun onReceive(ctx: Context?, intent: Intent?) {
                 when (intent?.action) {
@@ -73,6 +68,32 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    override fun onPostResume() {
+        super.onPostResume()
+        // start foreground services after activity is visible (safer on some ROMs)
+        if (!startedServicesOnce) {
+            startedServicesOnce = true
+            safeStartServices()
+        }
+    }
+
+    private fun safeStartServices() {
+        try {
+            ContextCompat.startForegroundService(
+                this, Intent(this, CallStateWatcherService::class.java)
+            )
+        } catch (t: Throwable) {
+            Log.e("MainActivity", "CallStateWatcherService start failed: ${t.message}", t)
+        }
+        try {
+            ContextCompat.startForegroundService(
+                this, Intent(this, AccessibilityWatchdogService::class.java)
+            )
+        } catch (t: Throwable) {
+            Log.e("MainActivity", "AccessibilityWatchdogService start failed: ${t.message}", t)
+        }
+    }
+
     override fun onDestroy() {
         try { unregisterReceiver(captureResultReceiver) } catch (_: Throwable) {}
         super.onDestroy()
@@ -85,27 +106,52 @@ class MainActivity : FlutterActivity() {
 
         channel?.setMethodCallHandler { call, result ->
             when (call.method) {
+
+                // --------- Call state ----------
                 "getCallState" -> result.success(getCallStateSafe())
                 "getIncomingNumber" -> result.success(CallReceiver.latestIncomingNumber)
 
+                // --------- Accessibility ----------
                 "isAccessibilityEnabled" -> result.success(isAccessibilityOn())
                 "openAccessibilitySettings" -> {
                     try {
-                        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        startActivity(
+                            Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
                         result.success(true)
                     } catch (_: Throwable) { result.success(false) }
                 }
 
+                // --------- Overlay ----------
                 "ensureOverlayPermission" -> { ensureOverlayPermission(); result.success(true) }
 
+                // --------- Exact alarm settings (optional) ----------
+                "openExactAlarmSettings" -> {
+                    try {
+                        if (Build.VERSION.SDK_INT >= 31) {
+                            startActivity(
+                                Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM)
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                        }
+                        result.success(true)
+                    } catch (_: Throwable) { result.success(false) }
+                }
+
+                // --------- Capture ----------
                 "requestScreenshotPermission" -> {
                     if (!isAccessibilityOn()) {
-                        try { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (_: Throwable) {}
+                        try {
+                            startActivity(
+                                Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                        } catch (_: Throwable) {}
                     }
                     result.success(true)
                 }
                 "isProjectionReady" -> result.success(isAccessibilityOn())
-
                 "triggerAccessibilityCapture" -> {
                     val now = System.currentTimeMillis()
                     if (now - lastTriggerAt < 800) { result.success(false); return@setMethodCallHandler }
@@ -116,20 +162,30 @@ class MainActivity : FlutterActivity() {
                     result.success(ok)
                 }
 
-                "getScreenshots" -> result.success(scanScreenshotDir().mapIndexed { idx, file ->
-                    mapOf("id" to idx.toLong(), "path" to file.absolutePath, "createdAt" to file.lastModified(), "uploaded" to false)
-                })
-
+                // --------- Screenshots ----------
+                "getScreenshots" -> result.success(
+                    scanScreenshotDir().mapIndexed { idx, file ->
+                        mapOf(
+                            "id" to idx.toLong(),
+                            "path" to file.absolutePath,
+                            "createdAt" to file.lastModified(),
+                            "uploaded" to false
+                        )
+                    }
+                )
                 "deleteScreenshot" -> {
                     val args = call.arguments as? Map<*, *> ?: emptyMap<String, Any>()
                     val path = args["path"] as? String ?: ""
                     val okFs = try {
-                        if (path.startsWith("content://")) contentResolver.delete(Uri.parse(path), null, null) >= 1
-                        else File(path).delete()
+                        if (path.startsWith("content://"))
+                            contentResolver.delete(Uri.parse(path), null, null) >= 1
+                        else
+                            File(path).delete()
                     } catch (_: Throwable) { false }
                     result.success(okFs)
                 }
 
+                // --------- Local call info sync ----------
                 "setLocalCallInfo" -> {
                     val args = call.arguments as Map<*, *>
                     storedCallTo = args["callTo"] as? String
@@ -137,7 +193,6 @@ class MainActivity : FlutterActivity() {
                     Log.d("MainActivity", "Stored callTo: $storedCallTo, carrier: $storedCarrier")
                     result.success(true)
                 }
-
                 "getLocalCallInfo" -> {
                     val info = mapOf(
                         "callTo" to (storedCallTo ?: "Personal"),
@@ -147,10 +202,51 @@ class MainActivity : FlutterActivity() {
                     result.success(info)
                 }
 
+                // --------- Shizuku helpers ----------
+                "shizukuStatus" -> {
+                    val running = ShizukuGrant.isRunning()
+                    val authorized = ShizukuGrant.hasShizukuPermission()
+                    result.success(mapOf("running" to running, "authorized" to authorized))
+                }
+                "shizukuGrantSelf" -> {
+                    ShizukuGrant.requestShizukuPermissionIfNeeded { _ ->
+                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                            val done = if (ShizukuGrant.hasShizukuPermission())
+                                ShizukuGrant.grantWriteSecureAndDump(packageName)
+                            else false
+                            result.success(done)
+                        }, 1500)
+                    }
+                }
+                "openShizuku" -> {
+                    try {
+                        var li = packageManager.getLaunchIntentForPackage("moe.shizuku.manager")
+                        if (li == null) li = packageManager.getLaunchIntentForPackage("moe.shizuku.privileged.api")
+                        if (li != null) {
+                            li.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            startActivity(li)
+                            result.success(true)
+                        } else {
+                            val ps = Intent(Intent.ACTION_VIEW).apply {
+                                data = Uri.parse("market://details?id=moe.shizuku.manager")
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            startActivity(ps)
+                            result.success(true)
+                        }
+                    } catch (_: Throwable) { result.success(false) }
+                }
+                "enableA11yViaShizuku" -> {
+                    val ok = A11yToggler.enableMyService(this)
+                    result.success(ok)
+                }
+
                 else -> result.notImplemented()
             }
         }
     }
+
+    // ---------- helpers ----------
 
     private fun triggerAccCaptureSmart(): Boolean {
         return try {
@@ -183,7 +279,8 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun getCallStateSafe(): String {
-        return try { if (!hasReadPhoneState()) "UNKNOWN" else getCallState() } catch (_: Throwable) { "UNKNOWN" }
+        return try { if (!hasReadPhoneState()) "UNKNOWN" else getCallState() }
+        catch (_: Throwable) { "UNKNOWN" }
     }
 
     private fun getCallState(): String {
@@ -198,13 +295,18 @@ class MainActivity : FlutterActivity() {
 
     private fun ensureOverlayPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
-            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            startActivity(
+                Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
         }
     }
 
     private fun isAccessibilityOn(): Boolean {
         return try {
-            val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: ""
+            val enabled = Settings.Secure.getString(
+                contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            ) ?: ""
             val cn = ComponentName(this, AssistCaptureService::class.java)
             val f1 = cn.flattenToShortString()
             val f2 = cn.flattenToString()
@@ -220,9 +322,10 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun scanScreenshotDir(): List<File> {
-        val dir = File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "SpamAnalyzer")
+        val dir = File(getExternalFilesDir(android.os.Environment.DIRECTORY_PICTURES), "SpamAnalyzer")
         if (!dir.exists()) return emptyList()
-        return dir.listFiles { f -> f.isFile && (f.name.endsWith(".png", true) || f.name.endsWith(".jpg", true)) }
-            ?.sortedByDescending { it.lastModified() } ?: emptyList()
+        return dir.listFiles { f ->
+            f.isFile && (f.name.endsWith(".png", true) || f.name.endsWith(".jpg", true))
+        }?.sortedByDescending { it.lastModified() } ?: emptyList()
     }
 }

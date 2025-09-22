@@ -21,7 +21,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() {
     super.initState();
 
-    // Ensure GetStorage.init() was called in main() before runApp()
     callToController.text = box.read('callTo') ?? '';
 
     final savedCarrier = box.read('carrier');
@@ -127,7 +126,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const SizedBox(height: 20),
 
-            // Carrier dropdown
             Container(
               decoration: BoxDecoration(
                 color: Colors.white.withOpacity(0.9),

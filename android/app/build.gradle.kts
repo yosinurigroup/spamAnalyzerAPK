@@ -1,27 +1,30 @@
 plugins {
     id("com.android.application")
-    id("kotlin-android")
+    id("org.jetbrains.kotlin.android")        
     id("dev.flutter.flutter-gradle-plugin")
 }
+
 android {
     namespace = "com.example.spam_analyzer_v6"
-    compileSdk = 36
-    ndkVersion = "27.0.12077973"
+    compileSdk = 35
+
     defaultConfig {
         applicationId = "com.example.spam_analyzer_v6"
-        minSdk = flutter.minSdkVersion
-        targetSdk = 35 // You can lower to 32 if you face strict permission issues
+        minSdk = 24
+        targetSdk = 35
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
-        isCoreLibraryDesugaringEnabled = true //         
+        isCoreLibraryDesugaringEnabled = true   // ✅ Kotlin DSL syntax
     }
     kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_11.toString()
+        jvmTarget = "11"
     }
+
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("debug")
@@ -41,12 +44,19 @@ android {
         }
     }
 }
+
 flutter {
     source = "../.."
 }
+
 dependencies {
-    // ✅ Required for flutter_local_notifications and Java 8+ APIs
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
+
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("com.google.mlkit:text-recognition:16.0.0") 
+
+    // Shizuku
+   implementation("dev.rikka.shizuku:api:13.1.5")
+   implementation("dev.rikka.shizuku:provider:13.1.5")
+
+    implementation("com.google.mlkit:text-recognition:16.0.0")
 }

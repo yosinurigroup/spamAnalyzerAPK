@@ -14,18 +14,18 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _emailCtrl = TextEditingController();
-  final _passCtrl  = TextEditingController();
+  final _passCtrl = TextEditingController();
   bool _obscure = true;
-  static const kBlue     = Color(0xff009688); 
-  static const kBgBlack  = Colors.black;    
-  static const kCard     = Color(0xFF0F1013);
-  static const kField    = Color(0xFF1A1D21); 
-  static const kStroke   = Color(0xFF2B3036);  
-  static const kHint     = Color(0xFF98A2B3); 
-  static const kText     = Colors.white;      
-  static const kSubText  = Color(0xFFB8C0CC); 
-  static const kDivider  = Color(0xFF1F2430); 
-final AuthController authController = Get.put(AuthController());
+  static const kBlue = Color(0xff009688);
+  static const kBgBlack = Colors.black;
+  static const kCard = Color(0xFF0F1013);
+  static const kField = Color(0xFF1A1D21);
+  static const kStroke = Color(0xFF2B3036);
+  static const kHint = Color(0xFF98A2B3);
+  static const kText = Colors.white;
+  static const kSubText = Color(0xFFB8C0CC);
+  static const kDivider = Color(0xFF1F2430);
+  final AuthController authController = Get.put(AuthController());
   InputDecoration _dec({
     required String hint,
     required IconData icon,
@@ -77,7 +77,7 @@ final AuthController authController = Get.put(AuthController());
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const SizedBox(height: 192),
-        
+
                   const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 6),
                     child: Text(
@@ -92,40 +92,49 @@ final AuthController authController = Get.put(AuthController());
                     ),
                   ),
                   const SizedBox(height: 22),
-        
+
                   TextField(
                     controller: _emailCtrl,
                     keyboardType: TextInputType.phone,
                     textInputAction: TextInputAction.next,
-                    style: const TextStyle(color: kText, fontWeight: FontWeight.w600),
+                    style: const TextStyle(
+                      color: kText,
+                      fontWeight: FontWeight.w600,
+                    ),
                     decoration: _dec(
                       hint: '+! 818 123 7654',
                       icon: Icons.phone,
                     ),
                   ),
                   const SizedBox(height: 14),
-        
+
                   // Password
                   TextField(
                     controller: _passCtrl,
                     obscureText: _obscure,
-                    style: const TextStyle(color: kText, fontWeight: FontWeight.w600),
+                    style: const TextStyle(
+                      color: kText,
+                      fontWeight: FontWeight.w600,
+                    ),
                     decoration: _dec(
                       hint: 'password',
                       icon: Icons.lock_outline,
                       suffix: IconButton(
                         onPressed: () => setState(() => _obscure = !_obscure),
                         icon: Icon(
-                          _obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                          _obscure
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
                           color: kHint,
                         ),
                       ),
                     ),
                   ),
-                 
+
                   const SizedBox(height: 36),
-        
-                  Obx(() => SizedBox(
+
+                  Obx(
+                    () => SizedBox(
                       width: double.infinity,
                       height: 54,
                       child: ElevatedButton(
@@ -138,43 +147,52 @@ final AuthController authController = Get.put(AuthController());
                           elevation: 0,
                         ),
                         onPressed: () {
-                          authController.login(email: _emailCtrl.text, password: _passCtrl.text);
+                          authController.login(
+                            email: _emailCtrl.text,
+                            password: _passCtrl.text,
+                          );
                         },
-                        child: authController.loggingIn.value ? const CircularProgressIndicator() : Text(
-                          'Sign In',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-                        ),
+                        child:
+                            authController.loggingIn.value
+                                ? const CircularProgressIndicator()
+                                : Text(
+                                  'Sign In',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
                       ),
                     ),
                   ),
-        
+
                   const SizedBox(height: 14),
-        
+
                   // Don't have account
                   Center(
                     child: RichText(
-                      text:  TextSpan(
+                      text: TextSpan(
                         text: "Don't have an account? ",
                         style: TextStyle(color: kSubText, fontSize: 14),
                         children: [
                           TextSpan(
-                            recognizer: TapGestureRecognizer()
-                              ..onTap = () => Get.to(() => const RegisterScreen()),
+                            recognizer:
+                                TapGestureRecognizer()
+                                  ..onTap =
+                                      () =>
+                                          Get.to(() => const RegisterScreen()),
                             text: 'Register',
                             style: TextStyle(
                               color: kBlue,
                               fontWeight: FontWeight.w700,
                             ),
-                          )
+                          ),
                         ],
                       ),
                     ),
                   ),
-        
+
                   const SizedBox(height: 18),
-        
-                
-        
                 ],
               ),
             ),

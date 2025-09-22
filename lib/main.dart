@@ -10,26 +10,20 @@ import 'package:android_intent_plus/android_intent.dart';
 import 'package:android_intent_plus/flag.dart';
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
+import 'package:spam_analyzer_v6/screens/splah_view.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await GetStorage.init();
-
-  // await Get.putAsync<NetworkController>(
-  //   () async => NetworkController().init(),
-  //   permanent: true,
-  // );
-
-  runApp(GetMaterialApp(
-    home: const CallScreen(),
-    debugShowCheckedModeBanner: false,
-  ));
+  runApp(GetMaterialApp(home: SplashView(), debugShowCheckedModeBanner: false));
 }
+
 class CallScreen extends StatefulWidget {
   const CallScreen({super.key});
   @override
   State<CallScreen> createState() => _CallScreenState();
 }
+
 class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
   String? currentNumber;
   String? callerName;
@@ -42,6 +36,9 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
   DateTime? _lastCapAt;
   PhoneStateStatus? _lastStatus;
 
+  bool _shizukuRunning = false;
+  bool _shizukuAuthorized = false;
+
   @override
   void initState() {
     super.initState();
@@ -50,12 +47,12 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
     PhoneState.stream.listen(handleCall);
     getCallStateFromNative();
     _loadAndSendStoredCallInfo();
+    _refreshShizukuStatus(); // 👈 make sure the initial status shows up
   }
 
   Future<void> _oneTimeSetup() async {
     await requestPermissions();
     await _ensureOverlayPermission();
-
     final wasAsked = box.read('accessibility_prompted') == true;
     var enabled = await _isAccessibilityEnabledFromNative();
 
@@ -72,6 +69,68 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
     } catch (e) {
       debugPrint("❌ isAccessibilityEnabled missing: $e");
       return false;
+    }
+  }
+
+  Future<void> _refreshShizukuStatus() async {
+    try {
+      final m = await _ch.invokeMethod('shizukuStatus');
+      if (!mounted) return;
+      setState(() {
+        _shizukuRunning = (m['running'] as bool?) == true;
+        _shizukuAuthorized = (m['authorized'] as bool?) == true;
+      });
+    } catch (e) {
+      debugPrint('❌ shizukuStatus error: $e');
+    }
+  }
+
+  Future<void> _grantViaShizuku() async {
+    await _refreshShizukuStatus();
+    if (!_shizukuRunning) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Shizuku running nahi hai — Shizuku app me Start dabayein',
+          ),
+        ),
+      );
+      return;
+    }
+    try {
+      final ok = await _ch.invokeMethod('shizukuGrantSelf');
+      await _refreshShizukuStatus();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            ok == true ? '✅ Granted via Shizuku' : '⚠️ Grant failed',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('❌ Grant error: $e')));
+    }
+  }
+
+  Future<void> _openShizukuAppOrInfo() async {
+    // Try to open Shizuku manager; if it fails, open App Info
+    try {
+      final intent = AndroidIntent(
+        action: 'android.intent.action.VIEW',
+        data: 'package:moe.shizuku.manager',
+      );
+      await intent.launch();
+    } catch (_) {
+      final infoIntent = const AndroidIntent(
+        action: 'android.settings.APPLICATION_DETAILS_SETTINGS',
+        data: 'package:moe.shizuku.manager',
+      );
+      await infoIntent.launch();
     }
   }
 
@@ -93,9 +152,10 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _maybeTriggerCapture() async {
-    if (_capInFlight) return; // in-flight guard
+    if (_capInFlight) return;
     final now = DateTime.now();
-    if (_lastCapAt != null && now.difference(_lastCapAt!).inMilliseconds < 3000) return; // cooldown
+    if (_lastCapAt != null && now.difference(_lastCapAt!).inMilliseconds < 3000)
+      return;
 
     final enabled = await _isAccessibilityEnabledFromNative();
     if (!enabled) {
@@ -105,7 +165,6 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
     }
 
     await Future.delayed(const Duration(milliseconds: 800));
-
     _capInFlight = true;
     try {
       await _triggerAccessibilityCaptureFromNative();
@@ -126,6 +185,7 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       getCallStateFromNative();
       requestPermissions();
+      _refreshShizukuStatus(); // keep status fresh when returning
       setState(() {});
     }
   }
@@ -138,7 +198,10 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _sendLocalCallInfo({required String callTo, required String carrier}) async {
+  Future<void> _sendLocalCallInfo({
+    required String callTo,
+    required String carrier,
+  }) async {
     try {
       await _ch.invokeMethod('setLocalCallInfo', {
         'callTo': callTo,
@@ -151,10 +214,8 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _loadAndSendStoredCallInfo() async {
-    // Read from GetStorage (same as settings screen)
     final callTo = box.read('callTo') ?? 'Personal';
     final carrier = box.read('carrier') ?? 'defaultCarrier';
-    
     debugPrint("📱 Loading stored values - callTo: $callTo, carrier: $carrier");
     await _sendLocalCallInfo(callTo: callTo, carrier: carrier);
   }
@@ -162,7 +223,6 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
   Future<void> requestPermissions() async {
     final phoneStatus = await Permission.phone.request();
     final contactsStatus = await Permission.contacts.request();
-
     setState(() {
       granted = phoneStatus.isGranted && contactsStatus.isGranted;
     });
@@ -182,7 +242,9 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
     try {
       final result = await _ch.invokeMethod('getCallState');
       final mapped = _mapNativeState(result);
-      final String? incomingNumber = await _ch.invokeMethod('getIncomingNumber');
+      final String? incomingNumber = await _ch.invokeMethod(
+        'getIncomingNumber',
+      );
 
       if ((incomingNumber != null && incomingNumber.isNotEmpty) ||
           mapped != PhoneStateStatus.CALL_ENDED) {
@@ -248,7 +310,6 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
 
   void handleCall(PhoneState state) async {
     if (!granted || !mounted) return;
-
     final st = state.status;
 
     if (_lastStatus != PhoneStateStatus.CALL_INCOMING &&
@@ -282,137 +343,139 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
           appBar: AppBar(
             leading: IconButton(
               icon: const Icon(Icons.settings, color: Colors.white),
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const SettingsScreen()),
-              ),
+              onPressed:
+                  () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const SettingsScreen(),
+                    ),
+                  ),
             ),
             title: const Text(
               'Call Detector',
-              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
             ),
-            actions: [
-              // IconButton(
-              //   icon: const Icon(Icons.call, color: Colors.white),
-              //   onPressed: () {
-              //     Navigator.push(
-              //       context,
-              //       MaterialPageRoute(builder: (context) => ScreenshotResult()),
-              //     );
-              //   },
-              // ),
-              // IconButton(
-              //   icon: const Icon(Icons.call, color: Colors.white),
-              //   onPressed: () {
-              //     Navigator.push(
-              //       context,
-              //       MaterialPageRoute(builder: (context) => ScreenshotResult()),
-              //     );
-              //   },
-              // ),
-              // IconButton(
-              //   icon: const Icon(Icons.image, color: Colors.white),
-              //   onPressed: () {
-              //     Navigator.push(
-              //       context,
-              //       MaterialPageRoute(builder: (context) => ScreenshotResultView()),
-              //     );
-              //   },
-              // ), 
-            ],
             backgroundColor: Colors.black,
             elevation: 0,
             centerTitle: true,
             iconTheme: const IconThemeData(color: Colors.white),
           ),
           body: Center(
-            child: !granted || !overlayGranted
-                ? _PermissionsPanel(
-                    onGrantPhoneContacts: requestPermissions,
-                    onOpenOverlay: openOverlaySettings,
-                    onOpenAccessibility: _openAccessibilitySettingsFromNative,
-                  )
-                : Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Container(
-                        width: 120,
-                        height: 120,
-                        decoration: BoxDecoration(
-                            color: Colors.grey[300], shape: BoxShape.circle),
-                        child: Lottie.asset(
-                          callStatus == PhoneStateStatus.CALL_INCOMING
-                              ? 'assets/call.json'
-                              : 'assets/user icon.json',
-                        ),
+            child:
+                !granted || !overlayGranted
+                    ? _PermissionsPanel(
+                      onGrantPhoneContacts: requestPermissions,
+                      onOpenOverlay: openOverlaySettings,
+                      onOpenAccessibility: _openAccessibilitySettingsFromNative,
+                    )
+                    : SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 12,
                       ),
-                      const SizedBox(height: 10),
-                      // Text(
-                      //   currentNumber != null && currentNumber!.isNotEmpty
-                      //       ? _formatPhoneNumber(currentNumber!)
-                      //       : "No Active Call",
-                      //   style:
-                      //       const TextStyle(fontSize: 24, color: Colors.white),
-                      // ),
-                      const SizedBox(height: 6),
-                      if (callerName != null)
-                        Text(
-                          callerName!,
-                          style: const TextStyle(
-                              fontSize: 16, color: Colors.white70),
-                        ),
-                      const SizedBox(height: 10),
-                      // if (callStatus != null)
-                      //   Container(
-                      //     padding: const EdgeInsets.symmetric(
-                      //         horizontal: 16, vertical: 8),
-                      //     decoration: BoxDecoration(
-                      //       color: _getStatusColor(callStatus!),
-                      //       borderRadius: BorderRadius.circular(20),
-                      //     ),
-                      //     child: Text(
-                      //       _getStatusText(callStatus!),
-                      //       style: const TextStyle(
-                      //           fontSize: 12, color: Colors.white),
-                      //     ),
-                      //   ),
-                      const SizedBox(height: 10),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 23, vertical: 4),
-                        decoration: BoxDecoration(
-                          color:  Color(0xff009688),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          // avatar / lottie
+                          Container(
+                            width: 120,
+                            height: 120,
+                            decoration: BoxDecoration(
+                              color: Colors.grey[300],
+                              shape: BoxShape.circle,
+                            ),
+                            child: Lottie.asset(
+                              callStatus == PhoneStateStatus.CALL_INCOMING
+                                  ? 'assets/call.json'
+                                  : 'assets/user icon.json',
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          if (callerName != null)
+                            Text(
+                              callerName!,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                color: Colors.white70,
+                              ),
+                            ),
+                          const SizedBox(height: 14),
 
-                        child: TextButton(onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => ScreenshotResultView())), child: const Text('View Call History', style: TextStyle(color: Colors.white
-                        , fontSize: 12))),),
-                      FutureBuilder<bool>(
-                        future: _isAccessibilityEnabledFromNative(),
-                        builder: (context, snapshot) {
-                          final enabled = snapshot.data ?? false;
-                          if (!enabled) {
-                            return ElevatedButton(
-                              onPressed: _openAccessibilitySettingsFromNative,
-                              child:
-                                  const Text('Enable Accessibility Service'),
-                            );
-                          }
-                          return const SizedBox.shrink();
-                        },
+                          // ✅ Shizuku panel (NEW)
+                          _ShizukuPanel(
+                            running: _shizukuRunning,
+                            authorized: _shizukuAuthorized,
+                            onGrant: _grantViaShizuku,
+                            onRefresh: _refreshShizukuStatus,
+                            onOpenApp: _openShizukuAppOrInfo,
+                          ),
+                          const SizedBox(height: 16),
+
+                          // history button
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 23,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xff009688),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: TextButton(
+                              onPressed:
+                                  () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder:
+                                          (context) => ScreenshotResultView(),
+                                    ),
+                                  ),
+                              child: const Text(
+                                'View Call History',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ),
+
+                          const SizedBox(height: 12),
+                          FutureBuilder<bool>(
+                            future: _isAccessibilityEnabledFromNative(),
+                            builder: (context, snapshot) {
+                              final enabled = snapshot.data ?? false;
+                              if (!enabled) {
+                                return ElevatedButton(
+                                  onPressed:
+                                      _openAccessibilitySettingsFromNative,
+                                  child: const Text(
+                                    'Enable Accessibility Service',
+                                  ),
+                                );
+                              }
+                              return const SizedBox.shrink();
+                            },
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
           ),
         );
       },
     );
   }
+
   String _formatPhoneNumber(String number) {
     if (number.length == 10) {
       return '${number.substring(0, 3)} ${number.substring(3, 6)}-${number.substring(6)}';
     }
     return number;
   }
+
   Color _getStatusColor(PhoneStateStatus status) {
     switch (status) {
       case PhoneStateStatus.CALL_INCOMING:
@@ -425,6 +488,7 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
         return Colors.grey;
     }
   }
+
   String _getStatusText(PhoneStateStatus status) {
     switch (status) {
       case PhoneStateStatus.CALL_INCOMING:
@@ -438,6 +502,123 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
     }
   }
 }
+
+class _ShizukuPanel extends StatelessWidget {
+  final bool running;
+  final bool authorized;
+  final VoidCallback onGrant;
+  final VoidCallback onRefresh;
+  final VoidCallback onOpenApp;
+
+  const _ShizukuPanel({
+    required this.running,
+    required this.authorized,
+    required this.onGrant,
+    required this.onRefresh,
+    required this.onOpenApp,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final chipStyle = TextStyle(
+      color: Colors.white,
+      fontSize: 12,
+      fontWeight: FontWeight.w600,
+    );
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F1A1A),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFF1E3A3A)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Shizuku',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _chip(
+                running ? 'Running' : 'Not running',
+                running ? Colors.green : Colors.red,
+                chipStyle,
+              ),
+              _chip(
+                authorized ? 'Authorized' : 'Not authorized',
+                authorized ? Colors.blue : Colors.orange,
+                chipStyle,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: onGrant,
+                  icon: const Icon(Icons.shield),
+                  label: const Text('Grant via Shizuku'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF1B5E20),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              IconButton(
+                onPressed: onRefresh,
+                tooltip: 'Refresh status',
+                icon: const Icon(Icons.refresh, color: Colors.white),
+              ),
+              const SizedBox(width: 6),
+              OutlinedButton.icon(
+                onPressed: onOpenApp,
+                icon: const Icon(Icons.open_in_new, color: Colors.white),
+                label: const Text(
+                  'Open Shizuku',
+                  style: TextStyle(color: Colors.white),
+                ),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Colors.white24),
+                ),
+              ),
+            ],
+          ),
+          if (!running) ...[
+            const SizedBox(height: 8),
+            const Text(
+              'Tip: Shizuku app open karke "Start" press karein, phir yahan Grant via Shizuku dabayein.',
+              style: TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _chip(String text, Color color, TextStyle style) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.18),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withOpacity(0.5)),
+      ),
+      child: Text(text, style: style),
+    );
+  }
+}
+
 class _PermissionsPanel extends StatelessWidget {
   final VoidCallback onGrantPhoneContacts;
   final VoidCallback onOpenOverlay;
@@ -466,11 +647,14 @@ class _PermissionsPanel extends StatelessWidget {
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.black,
             shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20)),
+              borderRadius: BorderRadius.circular(20),
+            ),
             padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
           ),
-          child: const Text("Grant Phone & Contact Permissions",
-              style: TextStyle(color: Colors.white)),
+          child: const Text(
+            "Grant Phone & Contact Permissions",
+            style: TextStyle(color: Colors.white),
+          ),
         ),
         const SizedBox(height: 10),
         ElevatedButton(
@@ -478,11 +662,14 @@ class _PermissionsPanel extends StatelessWidget {
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.deepPurple,
             shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20)),
+              borderRadius: BorderRadius.circular(20),
+            ),
             padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
           ),
-          child: const Text("Enable Display Over Apps",
-              style: TextStyle(color: Colors.white)),
+          child: const Text(
+            "Enable Display Over Apps",
+            style: TextStyle(color: Colors.white),
+          ),
         ),
         const SizedBox(height: 10),
         ElevatedButton(
@@ -490,11 +677,14 @@ class _PermissionsPanel extends StatelessWidget {
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.blueGrey,
             shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20)),
+              borderRadius: BorderRadius.circular(20),
+            ),
             padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
           ),
-          child: const Text("Open Accessibility Settings",
-              style: TextStyle(color: Colors.white)),
+          child: const Text(
+            "Open Accessibility Settings",
+            style: TextStyle(color: Colors.white),
+          ),
         ),
       ],
     );

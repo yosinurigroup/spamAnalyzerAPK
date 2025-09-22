@@ -1,64 +1,78 @@
 package com.example.spam_analyzer_v6
 
 import android.accessibilityservice.AccessibilityService
-import android.accessibilityservice.AccessibilityServiceInfo
 import android.accessibilityservice.AccessibilityService.ScreenshotResult
 import android.accessibilityservice.AccessibilityService.TakeScreenshotCallback
+import android.accessibilityservice.AccessibilityServiceInfo
+import android.content.Context
 import android.graphics.Bitmap
 import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
-import okhttp3.*
-import okhttp3.MediaType.Companion.toMediaTypeOrNull
-import okhttp3.RequestBody.Companion.toRequestBody
-import okhttp3.MultipartBody
-import java.io.ByteArrayOutputStream
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.*
-import java.text.SimpleDateFormat
-import java.time.ZoneId
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import okhttp3.*
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.ByteArrayOutputStream
+import java.text.Normalizer
+import java.text.SimpleDateFormat
+import java.time.ZoneId
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+import java.util.TimeZone
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 class AssistCaptureService : AccessibilityService() {
 
     companion object {
         private const val TAG = "AssistCaptureService"
 
+        // ---- existing intents ----
         const val ACTION_CAPTURE_NOW = "com.example.spam_analyzer_v6.CAPTURE_NOW"
         const val ACTION_CAPTURED_OK = "com.example.spam_analyzer_v6.CAPTURED_OK"
         const val ACTION_CAPTURED_ERR = "com.example.spam_analyzer_v6.CAPTURED_ERR"
+        const val ACTION_REFRESH_KEYWORDS = "com.example.spam_analyzer_v6.REFRESH_KEYWORDS"
 
-        // ⚠️ DEV/TEST ONLY: hardcoded JWT; remove or guard with BuildConfig.DEBUG before release
-        private const val STATIC_BEARER =
-            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY4Yzk3MGUxOGRjMTEwYTE3ZGM1NjcwZSIsImVtYWlsIjoiMzA1ODMzMzUyNyIsIm5hbWUiOiIzMDU4MzMzNTI3IiwiaWF0IjoxNzU4MTc4MTYyLCJleHAiOjE3NTg3ODI5NjJ9.hdjokZE6AlN_tRXAZ7Eu3hYKRj-MCh9XscJw1uASyIw"
+        // ---- ✅ NEW: watchdog state broadcast constants ----
+        const val ACTION_A11Y_STATE = "com.example.spam_analyzer_v6.ACTION_A11Y_STATE"
+        const val EXTRA_BOUND = "extra_bound"
 
         @Volatile internal var instance: AssistCaptureService? = null
+
         @Volatile private var lastHandledSessionId: String? = null
         @Volatile private var lastSavedAt: Long = 0L
-
         private const val MIN_GAP_MS = 3000L
         private const val CAPTURE_DELAY_MS = 4000L
 
+        /** Static keywords only (no API) */
+        private val STATIC_KEYWORDS: Set<String> = setOf(
+            "unknown",
+            "scam alert",
+            "likely",
+            "telemarketing",
+            "spam",
+            "suspected spam",
+            "suspected"
+        )
+
         fun requestCapture() = requestCapture(null, CAPTURE_DELAY_MS)
         fun requestCapture(sessionId: String?) = requestCapture(sessionId, CAPTURE_DELAY_MS)
-
         fun requestCapture(sessionId: String?, @Suppress("UNUSED_PARAMETER") delayMs: Long) {
-            val svc = instance
-            if (svc == null) {
-                Log.w(TAG, "requestCapture: instance null (Accessibility OFF?)")
-            } else {
-                svc.scheduleSingle(sessionId, CAPTURE_DELAY_MS)
-            }
+            instance?.scheduleSingle(sessionId, CAPTURE_DELAY_MS)
+                ?: Log.w(TAG, "requestCapture: instance null (Accessibility OFF?)")
         }
+
+        fun onCallRinging() { instance?.postRefreshKeywords() }
+        fun refreshKeywordsNow() { instance?.postRefreshKeywords() }
     }
 
     private lateinit var workerHandler: Handler
@@ -80,11 +94,8 @@ class AssistCaptureService : AccessibilityService() {
     private val BASE_URL = "https://spam-analyzer-backend-zr1v.onrender.com"
     private val ENDPOINT = "/api/screenshot/postscreenshot?debug=1"
 
-    private fun joinUrl(base: String, endpoint: String): String {
-        val b = base.trimEnd('/')
-        val e = endpoint.trimStart('/')
-        return "$b/$e"
-    }
+    private fun joinUrl(base: String, endpoint: String) =
+        "${base.trimEnd('/')}/${endpoint.trimStart('/')}"
 
     private fun currentTzId(): String =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) ZoneId.systemDefault().id
@@ -96,7 +107,7 @@ class AssistCaptureService : AccessibilityService() {
         } else {
             val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US)
             sdf.timeZone = TimeZone.getTimeZone(tzId)
-            sdf.format(Date())
+            sdf.format(java.util.Date())
         }
 
     override fun onServiceConnected() {
@@ -111,15 +122,21 @@ class AssistCaptureService : AccessibilityService() {
             flags = AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
                     AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS
         }
-
-        val th = HandlerThread("assist-cap")
-        th.start()
+        val th = HandlerThread("assist-cap"); th.start()
         workerHandler = Handler(th.looper)
+
+        // ✅ NEW: tell watchdog we are bound/active
+        sendBroadcast(android.content.Intent(ACTION_A11Y_STATE).putExtra(EXTRA_BOUND, true))
+
+        // warm-up
+        workerHandler.post { safeRefreshKeywordsBlocking() }
     }
 
-    override fun onUnbind(intent: android.content.Intent?): Boolean {
+    override fun onUnbind(intent: android.content.Intent?) = run {
         instance = null
-        return super.onUnbind(intent)
+        // ✅ NEW: tell watchdog we are unbound/inactive
+        sendBroadcast(android.content.Intent(ACTION_A11Y_STATE).putExtra(EXTRA_BOUND, false))
+        super.onUnbind(intent)
     }
 
     override fun onDestroy() {
@@ -131,80 +148,65 @@ class AssistCaptureService : AccessibilityService() {
     override fun onInterrupt() { Log.w(TAG, "⚠️ Accessibility interrupted") }
 
     override fun onStartCommand(intent: android.content.Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_CAPTURE_NOW) {
-            val sid = intent.getStringExtra("sessionId")
-            intent.getStringExtra("tz")?.let { tzForNext = it }
-            intent.getStringExtra("localISO")?.let { localISOForNext = it }
-            scheduleSingle(sid, CAPTURE_DELAY_MS)
+        when (intent?.action) {
+            ACTION_CAPTURE_NOW -> {
+                val sid = intent.getStringExtra("sessionId")
+                intent.getStringExtra("tz")?.let { tzForNext = it }
+                intent.getStringExtra("localISO")?.let { localISOForNext = it }
+                scheduleSingle(sid, CAPTURE_DELAY_MS)
+            }
+            ACTION_REFRESH_KEYWORDS -> postRefreshKeywords()
         }
         return super.onStartCommand(intent, flags, startId)
     }
 
+    private fun postRefreshKeywords() {
+        workerHandler.post {
+            Log.i(TAG, "🔄 (static) keywords refresh requested — using built-in list")
+            safeRefreshKeywordsBlocking()
+        }
+    }
+
     private fun scheduleSingle(sessionId: String?, @Suppress("UNUSED_PARAMETER") delayMs: Long) {
         val now = System.currentTimeMillis()
-        if (now - lastSavedAt < MIN_GAP_MS) {
-            Log.d(TAG, "scheduleSingle: too soon since last capture → drop"); return
-        }
-        if (sessionId != null && sessionId == lastHandledSessionId) {
-            Log.d(TAG, "scheduleSingle: already handled sid=$sessionId → drop"); return
-        }
-        if (capInFlight) {
-            Log.d(TAG, "scheduleSingle: capture in-flight → drop"); return
-        }
+        if (now - lastSavedAt < MIN_GAP_MS) { Log.d(TAG, "Too soon → drop"); return }
+        if (sessionId != null && sessionId == lastHandledSessionId) { Log.d(TAG, "Already handled sid=$sessionId → drop"); return }
+        if (capInFlight) { Log.d(TAG, "Capture in-flight → drop"); return }
 
         currentSessionId = sessionId
         savedThisAttempt.set(false)
         capInFlight = true
-        val effectiveDelay = CAPTURE_DELAY_MS
-        Log.i(TAG, "📅 scheduling single capture in ${effectiveDelay}ms (sid=$sessionId)")
+        Log.i(TAG, "📅 scheduling single capture in ${CAPTURE_DELAY_MS}ms (sid=$sessionId)")
         workerHandler.removeCallbacksAndMessages(null)
-        workerHandler.postDelayed({ tryCaptureOnce() }, effectiveDelay)
+        workerHandler.postDelayed({ tryCaptureOnce() }, CAPTURE_DELAY_MS)
     }
 
     private fun tryCaptureOnce() {
         val tag = "single"
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-            Log.w(TAG, "[$tag] API < 33, not supported")
-            sendCaptureError(-10); finishAttempt(); return
+            Log.w(TAG, "[$tag] API < 33, not supported"); sendCaptureError(-10); finishAttempt(); return
         }
         Log.i(TAG, "[$tag] tryCapture start")
-
         try {
             val exec = Executors.newSingleThreadExecutor()
             takeScreenshot(0, exec, object : TakeScreenshotCallback {
                 override fun onSuccess(screenshot: ScreenshotResult) {
-                    if (!savedThisAttempt.compareAndSet(false, true)) {
-                        Log.d(TAG, "[$tag] success ignored (already handled)"); return
-                    }
+                    if (!savedThisAttempt.compareAndSet(false, true)) { Log.d(TAG, "[$tag] ignored"); return }
                     try {
-                        val bmp = screenshot.hardwareBuffer?.use {
-                            Bitmap.wrapHardwareBuffer(it, screenshot.colorSpace)
-                        }
+                        val bmp = screenshot.hardwareBuffer?.use { Bitmap.wrapHardwareBuffer(it, screenshot.colorSpace) }
                         if (bmp != null) {
                             ocrThenUpload(bmp)
                             lastSavedAt = System.currentTimeMillis()
                             lastHandledSessionId = currentSessionId
                             Log.i(TAG, "[$tag] ✅ OCR done → proceeding to upload")
                             sendCaptureOk("direct-upload")
-                        } else {
-                            Log.e(TAG, "[$tag] bitmap null"); sendCaptureError(-2)
-                        }
-                    } catch (t: Throwable) {
-                        Log.e(TAG, "[$tag] exception: ${t.message}", t)
-                        sendCaptureError(-3)
-                    } finally { finishAttempt() }
+                        } else { Log.e(TAG, "[$tag] bitmap null"); sendCaptureError(-2) }
+                    } catch (t: Throwable) { Log.e(TAG, "[$tag] exception: ${t.message}", t); sendCaptureError(-3) }
+                    finally { finishAttempt() }
                 }
-                override fun onFailure(errorCode: Int) {
-                    Log.w(TAG, "[$tag] ❌ onFailure errorCode=$errorCode")
-                    sendCaptureError(errorCode)
-                    finishAttempt()
-                }
+                override fun onFailure(errorCode: Int) { Log.w(TAG, "[$tag] ❌ onFailure errorCode=$errorCode"); sendCaptureError(errorCode); finishAttempt() }
             })
-        } catch (t: Throwable) {
-            Log.e(TAG, "[$tag] tryCapture exception: ${t.message}", t)
-            sendCaptureError(-99)
-            finishAttempt()
-        }
+        } catch (t: Throwable) { Log.e(TAG, "[$tag] tryCapture exception: ${t.message}", t); sendCaptureError(-99); finishAttempt() }
     }
 
     private fun finishAttempt() {
@@ -213,15 +215,59 @@ class AssistCaptureService : AccessibilityService() {
         currentSessionId = null
     }
 
-    // ✅ Always return the static token for dev/testing
-    private fun getBearerToken(): String? {
-        return STATIC_BEARER
+    // -------- Token from FlutterSharedPreferences --------
+    private fun getBearerToken(): String? = try {
+        val sp = applicationContext.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+        val raw = sp.getString("flutter.auth_token", null)?.trim()
+        if (!raw.isNullOrEmpty()) { Log.d(TAG, "Bearer token present (len=${raw.length})"); raw } else { Log.w(TAG, "No token found"); null }
+    } catch (t: Throwable) { Log.e(TAG, "Token read error: ${t.message}", t); null }
+
+    // ===================== KEYWORDS (NORMAL ONLY) =====================
+
+    private fun logKw(msg: String) = Log.d(TAG, "[KW] $msg")
+
+    private fun normalizeForMatch(s: String?): String {
+        if (s == null) return ""
+        val nfkc = try { Normalizer.normalize(s, Normalizer.Form.NFKC) } catch (_: Throwable) { s }
+        return nfkc.lowercase().replace(Regex("\\s+"), " ").trim()
     }
 
-    private fun containsSpam(text: String): Boolean {
-        val re = Regex("""\bspam\b""", RegexOption.IGNORE_CASE)
-        return re.containsMatchIn(text)
+    /** whitespace-tolerant exact matcher */
+    private fun buildKeywordsPattern(kw: Set<String>): Regex {
+        val escapedAlternatives = kw.mapNotNull { it.trim().takeIf { s -> s.isNotEmpty() } }.map { k ->
+            val parts = k.split(Regex("\\s+")).filter { it.isNotEmpty() }.map { Regex.escape(it) }
+            if (parts.isEmpty()) null else parts.joinToString("\\s+")
+        }.filterNotNull()
+        return if (escapedAlternatives.isEmpty()) Regex("""a\A""") else {
+            val union = escapedAlternatives.joinToString("|")
+            Regex("""\b(?:$union)\b""", RegexOption.IGNORE_CASE)
+        }
     }
+
+    private fun containsKeyword(fullTextNorm: String, kw: Set<String>): Pair<Boolean, String?> {
+        val exactPat = buildKeywordsPattern(kw)
+        val m = exactPat.find(fullTextNorm)
+        return if (m != null) true to m.value else false to null
+    }
+
+    private fun firstHitInLines(result: Text, kw: Set<String>): String? {
+        val pat = buildKeywordsPattern(kw)
+        for (b in result.textBlocks) for (line in b.lines) {
+            val txt = normalizeForMatch(line.text ?: "")
+            val m = pat.find(txt)
+            if (m != null) return m.value
+        }
+        return null
+    }
+
+    private val staticKeywordsNormalized: Set<String> by lazy {
+        STATIC_KEYWORDS.map { normalizeForMatch(it) }.toSet()
+    }
+
+    private fun getKeywordsCached(): Set<String> = staticKeywordsNormalized
+    private fun safeRefreshKeywordsBlocking() { logKw("using static keywords only; nothing to refresh") }
+
+    // ===================== OCR + UPLOAD =====================
 
     private fun ocrThenUpload(bitmap: Bitmap) {
         try {
@@ -230,19 +276,25 @@ class AssistCaptureService : AccessibilityService() {
 
             recognizer.process(image)
                 .addOnSuccessListener { result: Text ->
-                    val fullText = result.text ?: ""
-                    val isSpam = containsSpam(fullText)
+                    val rawText = result.text ?: ""
+                    val fullTextNorm = normalizeForMatch(rawText)
 
-                    var firstHit: String? = null
-                    outer@ for (block in result.textBlocks) {
-                        for (line in block.lines) {
-                            if (containsSpam(line.text)) { firstHit = line.text; break@outer }
-                        }
+                    Log.i(TAG, "📝 OCR raw (first 400): ${rawText.take(400).replace("\n", "\\n")}")
+                    Log.i(TAG, "📝 OCR normalized (first 400): ${fullTextNorm.take(400)}")
+
+                    val keywords = getKeywordsCached()
+                    Log.i(TAG, "📦 Keywords in use (${keywords.size}): ${keywords.joinToString(", ")}")
+
+                    val (hit, matched) = containsKeyword(fullTextNorm, keywords)
+                    val firstHitLine = if (hit) matched ?: firstHitInLines(result, keywords) else firstHitInLines(result, keywords)
+
+                    if (hit) {
+                        Log.i(TAG, "🔎 MATCHED keyword: '${firstHitLine ?: matched}'")
+                    } else {
+                        Log.i(TAG, "⚪ OCR: no keyword found in ${keywords.size} keywords")
                     }
-                    if (isSpam) Log.i(TAG, " OCR FLAG: Found 'Spam'${firstHit?.let { " (line='$it')" } ?: ""}")
-                    else Log.i(TAG, "⚪ OCR: 'Spam' not found")
 
-                    directUploadBitmap(bitmap, isSpam)
+                    directUploadBitmap(bitmap, hit)
                 }
                 .addOnFailureListener { e ->
                     Log.e(TAG, "OCR failure: ${e.message}", e)
@@ -267,7 +319,6 @@ class AssistCaptureService : AccessibilityService() {
             val imageReqBody = bytes.toRequestBody("image/jpeg".toMediaTypeOrNull())
             val imagePart = MultipartBody.Part.createFormData("image", "screenshot.jpg", imageReqBody)
 
-            // ✅ RAM ONLY (values expected from your app's runtime singletons)
             val toNumber       = (LastOverlayInfo.callTo ?: MainActivity.storedCallTo ?: "").ifBlank { "" }
             val carrier        = (LastOverlayInfo.carrier ?: MainActivity.storedCarrier ?: "").ifBlank { "" }
             val incomingNumber = LastOverlayInfo.incomingNumber ?: "Unknown"
@@ -321,9 +372,7 @@ class AssistCaptureService : AccessibilityService() {
                     }
                 }
             })
-        } catch (t: Throwable) {
-            Log.e(TAG, "directUploadBitmap crash: ${t.message}", t)
-        }
+        } catch (t: Throwable) { Log.e(TAG, "directUploadBitmap crash: ${t.message}", t) }
     }
 
     private fun sendCaptureOk(token: String) {
