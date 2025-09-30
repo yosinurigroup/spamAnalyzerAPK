@@ -19,9 +19,7 @@
     <!-- Foreground services -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
-    <!-- DO NOT use phoneCall type (will crash if not dialer)
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
-    -->
+    <!-- NOTE: mediaProjection permission NOT needed for Accessibility.takeScreenshot() -->
 
     <!-- Battery optimization request -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
@@ -33,10 +31,22 @@
     <!-- Shizuku (binding permission) -->
     <uses-permission android:name="moe.shizuku.manager.permission.REQUEST_BIND" />
 
-    <!-- ⚡ Extra secure permissions (grant via Shizuku/ADB only) -->
+    <!-- Extra secure permissions (grant via Shizuku/ADB only) -->
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" tools:ignore="ProtectedPermissions"/>
     <uses-permission android:name="android.permission.DUMP" tools:ignore="ProtectedPermissions"/>
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+
+    <!-- ✅ Companion Device / Bluetooth (for background-kill resistance) -->
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
+    <!-- Android 12+ runtime BT permissions -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_CONNECT"
+        android:usesPermissionFlags="neverForLocation" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation" />
+    <!-- Pre-Android 12 scanning may need location -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 
     <application
         android:label="Spam Analyzer"
@@ -98,7 +108,7 @@
             </intent-filter>
         </receiver>
 
-        <!-- Overlay foreground service -->
+        <!-- Overlay foreground services -->
         <service
             android:name=".CallOverlayService"
             android:enabled="true"
@@ -111,7 +121,7 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
-        <!-- Accessibility watchdog -->
+        <!-- Accessibility watchdog (FGS type explicitly dataSync) -->
         <service
             android:name=".AccessibilityWatchdogService"
             android:enabled="true"
@@ -124,12 +134,11 @@
             android:enabled="true"
             android:exported="false" />
 
-        <!-- Accessibility screenshot service -->
+        <!-- Accessibility screenshot service (SAME process; no :assist) -->
         <service
             android:name=".AssistCaptureService"
             android:exported="true"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
-            android:process=":assist">
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
             </intent-filter>

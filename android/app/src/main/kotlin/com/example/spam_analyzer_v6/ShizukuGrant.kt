@@ -8,15 +8,12 @@ import android.util.Log
 import java.lang.reflect.Method
 
 /**
- * Shizuku wrapper without compile-time dependency.
- * Uses reflection so your app compiles even if the Shizuku maven
- * artifacts fail to resolve. At runtime, if Shizuku is installed
- * and running, these calls will work; otherwise they safely fall back.
+ * Shizuku wrapper via reflection (no hard compile-time dep).
  */
 object ShizukuGrant {
     private const val TAG = "ShizukuGrant"
 
-    // --- Reflection cache ---
+    // Reflection cache
     private var clazz: Class<*>? = null
     private var mPingBinder: Method? = null
     private var mCheckSelfPerm: Method? = null
@@ -26,13 +23,21 @@ object ShizukuGrant {
     private fun ensureLoaded(): Boolean {
         if (clazz != null) return true
         return try {
-            val c = Class.forName("dev.rikka.shizuku.Shizuku")
+            // ✅ correct runtime class/package
+            val c = Class.forName("rikka.shizuku.Shizuku")
             clazz = c
-            mPingBinder     = c.getMethod("pingBinder")
-            mCheckSelfPerm  = c.getMethod("checkSelfPermission")
-            mRequestPerm    = if (Build.VERSION.SDK_INT >= 23) c.getMethod("requestPermission", Int::class.javaPrimitiveType) else null
-            // signature: newProcess(String[] args, String[] env, String workDir)
-            mNewProcess     = c.getMethod("newProcess", Array<String>::class.java, Array<String>::class.java, String::class.java)
+            mPingBinder    = c.getMethod("pingBinder")
+            mCheckSelfPerm = c.getMethod("checkSelfPermission")
+            mRequestPerm   = if (Build.VERSION.SDK_INT >= 23)
+                c.getMethod("requestPermission", Int::class.javaPrimitiveType)
+            else null
+            // ✅ correct signature: newProcess(String[] args, String[] env, java.io.File dir)
+            mNewProcess    = c.getMethod(
+                "newProcess",
+                Array<String>::class.java,
+                Array<String>::class.java,
+                java.io.File::class.java
+            )
             true
         } catch (t: Throwable) {
             Log.w(TAG, "Shizuku class not found: ${t.message}")
@@ -55,10 +60,7 @@ object ShizukuGrant {
         } catch (_: Throwable) { false }
     }
 
-    /**
-     * Ask Shizuku for runtime permission. We use a small polling loop
-     * instead of listener interface (so we don't need Shizuku types).
-     */
+    /** Ask Shizuku for runtime permission (polling, no listener types). */
     fun requestShizukuPermissionIfNeeded(callback: (granted: Boolean) -> Unit) {
         if (!isRunning()) { callback(false); return }
         if (hasShizukuPermission()) { callback(true); return }
@@ -72,7 +74,7 @@ object ShizukuGrant {
             callback(false); return
         }
 
-        // Poll for up to ~4s
+        // Poll up to ~4s
         val handler = Handler(Looper.getMainLooper())
         var tries = 0
         fun tick() {
@@ -83,11 +85,12 @@ object ShizukuGrant {
         tick()
     }
 
-    /** Run: cmd package grant <pkg> <perm> via Shizuku */
+    /** Run: pm grant <pkg> <perm> via Shizuku */
     private fun runGrantCommand(pkg: String, perm: String): Boolean {
         if (!ensureLoaded()) return false
         return try {
-            val args = arrayOf("cmd", "package", "grant", pkg, perm)
+            val args = arrayOf("pm", "grant", pkg, perm)
+            // env = null, dir = null
             val p = mNewProcess!!.invoke(null, args, null, null) as Process
             val code = p.waitFor()
             Log.i(TAG, "grant $perm exit=$code")
@@ -98,7 +101,7 @@ object ShizukuGrant {
         }
     }
 
-    /** Grant both WRITE_SECURE_SETTINGS + DUMP (returns true only if both succeed). */
+    /** Grant both WRITE_SECURE_SETTINGS + DUMP (true only if both succeed). */
     fun grantWriteSecureAndDump(pkg: String): Boolean {
         if (!isRunning() || !hasShizukuPermission()) return false
         val a = runGrantCommand(pkg, "android.permission.WRITE_SECURE_SETTINGS")

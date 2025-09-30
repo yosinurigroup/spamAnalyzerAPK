@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.example.spam_analyzer_v6"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.example.spam_analyzer_v6"
@@ -19,7 +19,7 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
-        isCoreLibraryDesugaringEnabled = true   // ✅ Kotlin DSL syntax
+        isCoreLibraryDesugaringEnabled = true  
     }
     kotlinOptions {
         jvmTarget = "11"
@@ -51,12 +51,10 @@ flutter {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
-
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-
-    // Shizuku
-   implementation("dev.rikka.shizuku:api:13.1.5")
-   implementation("dev.rikka.shizuku:provider:13.1.5")
-
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
+    implementation ("androidx.work:work-runtime-ktx:2.9.1")
+    implementation ("androidx.core:core-ktx:1.12.0")
     implementation("com.google.mlkit:text-recognition:16.0.0")
 }

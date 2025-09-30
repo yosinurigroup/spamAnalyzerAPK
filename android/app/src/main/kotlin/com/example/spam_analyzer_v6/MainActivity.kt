@@ -1,6 +1,7 @@
 package com.example.spam_analyzer_v6
 
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.app.Activity
 import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
@@ -19,6 +20,14 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
+
+// ✅ Companion Device imports
+import android.companion.AssociationRequest
+import android.companion.BluetoothDeviceFilter
+import android.companion.CompanionDeviceManager
+import android.content.pm.PackageManager
+import android.Manifest
+import android.content.IntentSender // <— IMPORTANT for chooser callback
 
 class MainActivity : FlutterActivity() {
 
@@ -237,13 +246,28 @@ class MainActivity : FlutterActivity() {
                     } catch (_: Throwable) { result.success(false) }
                 }
                 "enableA11yViaShizuku" -> {
-                    val ok = A11yToggler.enableMyService(this)
+                    val ok = A11yToggler.enableMyService(this@MainActivity)
                     result.success(ok)
+                }
+
+                // --------- ✅ Companion Device Manager (CDM) ----------
+                "companionStatus" -> {
+                    result.success(CompanionKeeper.hasAssociation(this))
+                }
+                "ensureCompanionAssociation" -> {
+                    CompanionKeeper.ensureAssociation(this)
+                    result.success(true)
                 }
 
                 else -> result.notImplemented()
             }
         }
+    }
+
+    // ---------- Activity result for CDM chooser ----------
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        CompanionKeeper.handleActivityResult(requestCode, resultCode, data)
     }
 
     // ---------- helpers ----------
@@ -273,7 +297,7 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun hasReadPhoneState(): Boolean {
-        return androidx.core.content.ContextCompat.checkSelfPermission(
+        return ContextCompat.checkSelfPermission(
             this, android.Manifest.permission.READ_PHONE_STATE
         ) == android.content.pm.PackageManager.PERMISSION_GRANTED
     }

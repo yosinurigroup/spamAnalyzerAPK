@@ -142,7 +142,13 @@ class AuthController extends GetxController {
 
   void _toast(String msg) {
     if (Get.isOverlaysOpen || Get.context != null) {
-      Get.snackbar('Auth', msg, snackPosition: SnackPosition.BOTTOM);
+      Get.snackbar(
+        'Auth',
+        msg,
+        snackPosition: SnackPosition.BOTTOM,
+        colorText: Colors.white,
+        backgroundColor: Colors.green,
+      );
     } else {
       print('[Auth] $msg');
     }

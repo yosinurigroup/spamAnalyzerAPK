@@ -1,33 +1,64 @@
+// WatchdogAlarmReceiver.kt
 package com.example.spam_analyzer_v6
 
 import android.app.AlarmManager
 import android.app.PendingIntent
-import android.content.*
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
 import android.os.Build
-import android.os.SystemClock
-import androidx.core.content.ContextCompat
 
 class WatchdogAlarmReceiver : BroadcastReceiver() {
-    override fun onReceive(c: Context, i: Intent) {
-        // Ensure watchdog is alive
-        ContextCompat.startForegroundService(c, Intent(c, AccessibilityWatchdogService::class.java))
-        // Re-schedule
-        schedule(c)
+    override fun onReceive(context: Context, intent: Intent) {
+        // do your tick work, then reschedule
+        schedule(context)
     }
 
     companion object {
-        fun schedule(context: Context) {
-            val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        private const val REQ_CODE = 9901
+        private const val INTERVAL_MS = 3 * 60 * 1000L
+
+        fun schedule(ctx: Context) {
+            val am = ctx.getSystemService(AlarmManager::class.java)
             val pi = PendingIntent.getBroadcast(
-                context, 1001,
-                Intent(context, WatchdogAlarmReceiver::class.java),
+                ctx,
+                REQ_CODE,
+                Intent(ctx, WatchdogAlarmReceiver::class.java),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-            val triggerAt = SystemClock.elapsedRealtime() + 15 * 60 * 1000L  // every 15 min
-            if (Build.VERSION.SDK_INT >= 23) {
-                am.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pi)
+            val triggerAt = System.currentTimeMillis() + INTERVAL_MS
+
+            // ✅ Use exact only if allowed; otherwise fall back to inexact
+            val canExact = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                am.canScheduleExactAlarms()
             } else {
-                am.setExact(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pi)
+                true
+            }
+
+            try {
+                if (canExact) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi)
+                    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                        am.setExact(AlarmManager.RTC_WAKEUP, triggerAt, pi)
+                    } else {
+                        am.set(AlarmManager.RTC_WAKEUP, triggerAt, pi)
+                    }
+                } else {
+                    // ⏳ Inexact fallback (no special access needed)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                        am.setWindow(AlarmManager.RTC_WAKEUP, triggerAt, /*windowLength*/ 60_000L, pi)
+                    } else {
+                        am.set(AlarmManager.RTC_WAKEUP, triggerAt, pi)
+                    }
+                }
+            } catch (_: SecurityException) {
+                // final safety: never crash; fall back inexact if anything slips through
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                    am.setWindow(AlarmManager.RTC_WAKEUP, triggerAt, 60_000L, pi)
+                } else {
+                    am.set(AlarmManager.RTC_WAKEUP, triggerAt, pi)
+                }
             }
         }
     }

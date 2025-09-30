@@ -68,3 +68,17 @@
 -keepattributes *Annotation*
 -keepattributes EnclosingMethod
 -keepattributes InnerClasses
+
+# If you use the official API artifact (recommended)
+-keep class moe.shizuku.api.** { *; }
+-keep interface moe.shizuku.api.** { *; }
+-dontwarn moe.shizuku.**
+
+# For older namespaces / helper libs (harmless if unused)
+-keep class rikka.shizuku.** { *; }
+-keep interface rikka.shizuku.** { *; }
+-dontwarn rikka.shizuku.**
+
+# Keep Shizuku Manager package name if you open it via reflection/intents
+-keep class moe.shizuku.manager.** { *; }
+-dontwarn moe.shizuku.manager.**

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
+import 'package:spam_analyzer_v6/main.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({Key? key}) : super(key: key);
@@ -38,9 +39,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> saveSettings() async {
-    final callTo = callToController.text.trim().isEmpty
-        ? 'Personal'
-        : callToController.text.trim();
+    final callTo =
+        callToController.text.trim().isEmpty
+            ? 'Personal'
+            : callToController.text.trim();
     final carrier = (selectedCarrier ?? carriers.first).trim();
 
     box.write('callTo', callTo);
@@ -64,6 +66,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         margin: const EdgeInsets.all(12),
         borderRadius: 12,
       );
+      Get.to(CallScreen());
     } catch (e) {
       print('❌ Failed to save settings: $e');
       Get.snackbar(
@@ -104,6 +107,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       appBar: AppBar(
         elevation: 0,
         backgroundColor: Colors.transparent,
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: Text("v0.23"),
+          ),
+        ],
         title: const Text(
           '⚙️ Settings',
           style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold),
@@ -134,37 +143,60 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               child: DropdownButtonHideUnderline(
                 child: DropdownButtonFormField<String>(
-  key: const ValueKey('carrierDropdown'), // sanity key
-  value: selectedCarrier ?? carriers.first,
-  isExpanded: true,
-  menuMaxHeight: 320,
-  decoration: InputDecoration(
-    prefixIcon: const Icon(Icons.network_cell_outlined, color: Colors.indigo),
-    hintText: 'Select Carrier',
-    hintStyle: const TextStyle(color: Colors.grey, fontSize: 12),
-    filled: true,
-    fillColor: Colors.white.withOpacity(0.9),
-    contentPadding: const EdgeInsets.symmetric(vertical: 18, horizontal: 20),
-    enabledBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(16),
-      borderSide: BorderSide(color: Colors.grey.shade300, width: 1),
-    ),
-    focusedBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(16),
-      borderSide: const BorderSide(color: Colors.indigo, width: 2),
-    ),
-  ),
-  items: carriers
-      .map((c) => DropdownMenuItem<String>(
-            value: c,
-            child: Text(c, style: const TextStyle(color: Colors.black)),
-          ))
-      .toList(),
-  onChanged: (val) => setState(() => selectedCarrier = val ?? carriers.first),
-  dropdownColor: Colors.white,
-  icon: const Icon(Icons.arrow_drop_down, color: Colors.indigo),
-)
-
+                  key: const ValueKey('carrierDropdown'), // sanity key
+                  value: selectedCarrier ?? carriers.first,
+                  isExpanded: true,
+                  menuMaxHeight: 320,
+                  decoration: InputDecoration(
+                    prefixIcon: const Icon(
+                      Icons.network_cell_outlined,
+                      color: Colors.indigo,
+                    ),
+                    hintText: 'Select Carrier',
+                    hintStyle: const TextStyle(
+                      color: Colors.grey,
+                      fontSize: 12,
+                    ),
+                    filled: true,
+                    fillColor: Colors.white.withOpacity(0.9),
+                    contentPadding: const EdgeInsets.symmetric(
+                      vertical: 18,
+                      horizontal: 20,
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide(
+                        color: Colors.grey.shade300,
+                        width: 1,
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: const BorderSide(
+                        color: Colors.indigo,
+                        width: 2,
+                      ),
+                    ),
+                  ),
+                  items:
+                      carriers
+                          .map(
+                            (c) => DropdownMenuItem<String>(
+                              value: c,
+                              child: Text(
+                                c,
+                                style: const TextStyle(color: Colors.black),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                  onChanged:
+                      (val) => setState(
+                        () => selectedCarrier = val ?? carriers.first,
+                      ),
+                  dropdownColor: Colors.white,
+                  icon: const Icon(Icons.arrow_drop_down, color: Colors.indigo),
+                ),
               ),
             ),
 

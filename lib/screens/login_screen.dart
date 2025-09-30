@@ -101,10 +101,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       color: kText,
                       fontWeight: FontWeight.w600,
                     ),
-                    decoration: _dec(
-                      hint: '+! 818 123 7654',
-                      icon: Icons.phone,
-                    ),
+                    decoration: _dec(hint: '818 123 7654', icon: Icons.phone),
                   ),
                   const SizedBox(height: 14),
 
