@@ -2,32 +2,62 @@ package com.example.spam_analyzer_v6
 
 import android.app.AlarmManager
 import android.app.PendingIntent
-import android.content.*
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
 import android.os.Build
-import android.os.SystemClock
-import androidx.core.content.ContextCompat
 
 class WatchdogAlarmReceiver : BroadcastReceiver() {
-    override fun onReceive(c: Context, i: Intent) {
-        // Ensure watchdog is alive
-        ContextCompat.startForegroundService(c, Intent(c, AccessibilityWatchdogService::class.java))
-        // Re-schedule
-        schedule(c)
+    override fun onReceive(context: Context, intent: Intent) {
+        // Tick → poke service to run health check (optional)
+        val svc = Intent(context, AccessibilityWatchdogService::class.java)
+            .setAction(AccessibilityWatchdogService.ACTION_TICK)
+        try { context.startService(svc) } catch (_: Throwable) {}
+
+        // reschedule again
+        schedule(context)
     }
 
     companion object {
-        fun schedule(context: Context) {
-            val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        private const val REQ_CODE = 9901
+        private const val INTERVAL_MS = 15 * 60 * 1000L // 15 min: doze-friendly
+
+        fun schedule(ctx: Context) {
+            val am = ctx.getSystemService(AlarmManager::class.java)
             val pi = PendingIntent.getBroadcast(
-                context, 1001,
-                Intent(context, WatchdogAlarmReceiver::class.java),
+                ctx, REQ_CODE,
+                Intent(ctx, WatchdogAlarmReceiver::class.java),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-            val triggerAt = SystemClock.elapsedRealtime() + 15 * 60 * 1000L  // every 15 min
-            if (Build.VERSION.SDK_INT >= 23) {
-                am.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pi)
-            } else {
-                am.setExact(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pi)
+            val t = System.currentTimeMillis() + INTERVAL_MS
+
+            val canExact = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                am.canScheduleExactAlarms()
+            } else true
+
+            try {
+                if (canExact) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, t, pi)
+                    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                        am.setExact(AlarmManager.RTC_WAKEUP, t, pi)
+                    } else {
+                        am.set(AlarmManager.RTC_WAKEUP, t, pi)
+                    }
+                } else {
+                    // inexact fallback
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                        am.setWindow(AlarmManager.RTC_WAKEUP, t, 60_000L, pi)
+                    } else {
+                        am.set(AlarmManager.RTC_WAKEUP, t, pi)
+                    }
+                }
+            } catch (_: SecurityException) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                    am.setWindow(AlarmManager.RTC_WAKEUP, t, 60_000L, pi)
+                } else {
+                    am.set(AlarmManager.RTC_WAKEUP, t, pi)
+                }
             }
         }
     }

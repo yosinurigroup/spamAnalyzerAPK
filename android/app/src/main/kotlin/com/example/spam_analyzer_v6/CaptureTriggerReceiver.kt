@@ -11,6 +11,7 @@ class CaptureTriggerReceiver : BroadcastReceiver() {
             val sid = intent.getStringExtra("sessionId")
             val delay = intent.getLongExtra("delayMs", 1500L)
             Log.i("CaptureTriggerReceiver", "➡️ ACTION_CAPTURE_NOW received (sid=$sid, delay=${delay}ms)")
+            // ✅ ye ab compile hoga (overload add ho gaya)
             AssistCaptureService.requestCapture(sid, delay)
         }
     }

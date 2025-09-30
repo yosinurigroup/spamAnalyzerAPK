@@ -54,14 +54,11 @@ class CallReceiver : BroadcastReceiver() {
                         carrier = carrier
                     )
 
-                    // ✅ NEW: force-refresh keywords as soon as phone rings
-                    // Try direct helper (if service instance is already alive)…
+                    // ✅ force-refresh keywords as soon as phone rings
                     try {
                         AssistCaptureService.onCallRinging()
-                    } catch (_: Throwable) {
-                        // ignore
-                    }
-                    // …and also send an explicit startService with action to be safe.
+                    } catch (_: Throwable) {}
+
                     try {
                         val svcIntent = Intent(context.applicationContext, AssistCaptureService::class.java).apply {
                             action = AssistCaptureService.ACTION_REFRESH_KEYWORDS
@@ -96,16 +93,16 @@ class CallReceiver : BroadcastReceiver() {
                     }
                     lastRingAt = now
 
-                    // Schedule screenshot capture after a short delay
+                    // ✅ Schedule screenshot capture after 5 seconds
                     val sessionId = "${displayNumber}-${now}"
                     context.sendBroadcast(
                         Intent(AssistCaptureService.ACTION_CAPTURE_NOW).apply {
                             setClassName(context.packageName, "com.example.spam_analyzer_v6.CaptureTriggerReceiver")
                             putExtra("sessionId", sessionId)
-                            putExtra("delayMs", 1500L)
+                            putExtra("delayMs", 4000L) // 👈 Fixed: Always request with 5s delay
                         }
                     )
-                    Log.d(TAG, "RINGING → requested accessibility capture (sid=$sessionId, +1500ms)")
+                    Log.d(TAG, "RINGING → requested accessibility capture (sid=$sessionId, +4000ms)")
                 }
 
                 TelephonyManager.EXTRA_STATE_OFFHOOK -> {

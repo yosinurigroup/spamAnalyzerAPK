@@ -170,6 +170,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     const SizedBox(height: 14),
 
                     TextField(
+                  
                       controller: _emailCtrl,
                       keyboardType: TextInputType.phone,
                       textInputAction: TextInputAction.next,
@@ -177,8 +178,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         color: kText,
                         fontWeight: FontWeight.w600,
                       ),
+                      
                       decoration: _dec(
-                        hint: '+1 818 123 7654',
+                        hint: '818 123 7654',
                         icon: Icons.phone,
                       ),
                     ),
