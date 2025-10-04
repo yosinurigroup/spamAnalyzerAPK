@@ -1,19 +1,15 @@
-import 'dart:async';
-import 'dart:io';
-
-import 'package:android_intent_plus/android_intent.dart';
-import 'package:android_intent_plus/flag.dart';
-import 'package:contacts_service_plus/contacts_service_plus.dart';
+import 'package:spam_analyzer_v6/screens/screenshots_screen.dart';
+import 'package:spam_analyzer_v6/screens/settings.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:get/get.dart';
-import 'package:get_storage/get_storage.dart';
 import 'package:lottie/lottie.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:phone_state/phone_state.dart';
-
-import 'package:spam_analyzer_v6/screens/screenshots_screen.dart';
-import 'package:spam_analyzer_v6/screens/settings.dart';
+import 'package:contacts_service_plus/contacts_service_plus.dart';
+import 'package:android_intent_plus/android_intent.dart';
+import 'package:android_intent_plus/flag.dart';
+import 'package:get/get.dart';
+import 'package:get_storage/get_storage.dart';
 import 'package:spam_analyzer_v6/screens/splah_view.dart';
 
 void main() async {
@@ -32,55 +28,37 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
   String? currentNumber;
   String? callerName;
   PhoneStateStatus? callStatus;
-
   bool granted = false;
-  bool _permReqInFlight = false; 
-  bool _capInFlight = false;
-  DateTime? _lastCapAt;
-  PhoneStateStatus? _lastStatus;
+
+  // ✅ Native bridge
   static const _ch = MethodChannel('com.example.call_detector/channel');
 
   final box = GetStorage();
+
+  bool _capInFlight = false;
+  DateTime? _lastCapAt;
+  PhoneStateStatus? _lastStatus;
+
+  // ✅ Companion (keep-alive) status
   bool? _companionOk;
   bool _checkingCompanion = false;
-
-  StreamSubscription<PhoneState>? _phoneStateSub;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-
-    // Bind native → flutter callbacks (screenshot saved/failed etc.)
-
-    _ch.setMethodCallHandler(_onNativeCallback);
-
     _oneTimeSetup();
-
-    // Phone state stream
-    _phoneStateSub = PhoneState.stream.listen(handleCall);
-
-    // Initial pulls
+    PhoneState.stream.listen(handleCall);
     getCallStateFromNative();
     _loadAndSendStoredCallInfo();
     _refreshCompanionStatus();
   }
 
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _phoneStateSub?.cancel();
-    super.dispose();
-  }
-
-  // -------------------- First time setup --------------------
-
   Future<void> _oneTimeSetup() async {
     await requestPermissions();
     await _ensureOverlayPermission();
-
     final wasAsked = box.read('accessibility_prompted') == true;
-    final enabled = await _isAccessibilityEnabledFromNative();
+    var enabled = await _isAccessibilityEnabledFromNative();
 
     if (!enabled && !wasAsked) {
       await _openAccessibilitySettingsFromNative();
@@ -88,32 +66,7 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
     }
   }
 
-  // -------------------- Native callbacks --------------------
-
-  Future<dynamic> _onNativeCallback(MethodCall call) async {
-    switch (call.method) {
-      case 'onAccessibilityScreenshotSaved':
-        final String? tokenOrPath = call.arguments as String?;
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Screenshot captured ✅')),
-        );
-        debugPrint('✅ Screenshot saved: $tokenOrPath');
-        return;
-
-      case 'onAccessibilityScreenshotFailed':
-        final int code = (call.arguments as int?) ?? -1;
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Screenshot failed (code=$code)')),
-        );
-        return;
-
-      default:
-        return;
-    }
-  }
-
+  // -------------------- Accessibility helpers --------------------
 
   Future<bool> _isAccessibilityEnabledFromNative() async {
     try {
@@ -129,7 +82,7 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
     try {
       await _ch.invokeMethod('openAccessibilitySettings');
     } catch (e) {
-      debugPrint("openAccessibilitySettings error: $e");
+      debugPrint("❌ openAccessibilitySettings error: $e");
     }
   }
 
@@ -138,7 +91,7 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
       await _ch.invokeMethod('triggerAccessibilityCapture');
       debugPrint("✅ Accessibility capture broadcast sent");
     } catch (e) {
-      debugPrint(" triggerAccessibilityCapture error: $e");
+      debugPrint("❌ triggerAccessibilityCapture error: $e");
     }
   }
 
@@ -154,9 +107,7 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
       return;
     }
 
-    // small delay to let call UI stabilize
     await Future.delayed(const Duration(milliseconds: 800));
-
     _capInFlight = true;
     try {
       await _triggerAccessibilityCaptureFromNative();
@@ -166,6 +117,7 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
     }
   }
 
+  // -------------------- Companion (Keep-Alive) helpers --------------------
 
   Future<void> _refreshCompanionStatus() async {
     setState(() => _checkingCompanion = true);
@@ -183,7 +135,7 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
   Future<void> _ensureCompanionAssociation() async {
     try {
       await _ch.invokeMethod('ensureCompanionAssociation');
-      // chooser close → onResume → status refresh
+      // chooser se wapas aane par resume trigger hoga → status refresh wahan bhi
     } catch (e) {
       debugPrint('❌ ensureCompanionAssociation error: $e');
       if (!mounted) return;
@@ -196,12 +148,17 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
   // -------------------- Lifecycle --------------------
 
   @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      // Avoid spamming native side
-      unawaited(getCallStateFromNative());
-      unawaited(_refreshCompanionStatus());
-      unawaited(requestPermissions()); // guarded
+      getCallStateFromNative();
+      requestPermissions();
+      _refreshCompanionStatus(); // ✅ chooser close ke baad yahan update
       setState(() {});
     }
   }
@@ -215,46 +172,6 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
       debugPrint("❌ ensureOverlayPermission error: $e");
     }
   }
-
-  Future<void> openOverlaySettings() async {
-    const packageName = 'com.example.spam_analyzer_v6';
-    final intent = AndroidIntent(
-      action: 'android.settings.action.MANAGE_OVERLAY_PERMISSION',
-      data: 'package:$packageName',
-      flags: <int>[Flag.FLAG_ACTIVITY_NEW_TASK],
-    );
-    await intent.launch();
-  }
-
-  Future<void> requestPermissions() async {
-    if (_permReqInFlight) return;
-    _permReqInFlight = true;
-    try {
-      // ✅ batch request (prevents "already running" error)
-      final Map<Permission, PermissionStatus> res = await [
-        Permission.phone,
-        Permission.contacts,
-        Permission.bluetoothScan,
-        Permission.bluetoothConnect,
-        Permission.locationWhenInUse,
-        // Android 13+ notifications (so watchdog can alert)
-        Permission.notification,
-      ].request();
-
-      setState(() {
-        granted = (res[Permission.phone]?.isGranted ?? false) &&
-            (res[Permission.contacts]?.isGranted ?? false) &&
-            (res[Permission.bluetoothScan]?.isGranted ?? true) &&
-            (res[Permission.bluetoothConnect]?.isGranted ?? true);
-      });
-    } catch (e) {
-      debugPrint("Permission request error: $e");
-    } finally {
-      _permReqInFlight = false;
-    }
-  }
-
-  // -------------------- Call state + contacts --------------------
 
   Future<void> _sendLocalCallInfo({
     required String callTo,
@@ -278,6 +195,35 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
     await _sendLocalCallInfo(callTo: callTo, carrier: carrier);
   }
 
+  Future<void> requestPermissions() async {
+    final phoneStatus = await Permission.phone.request();
+    final contactsStatus = await Permission.contacts.request();
+    if (await Permission.bluetoothScan.isDenied) {
+      await Permission.bluetoothScan.request();
+    }
+    if (await Permission.bluetoothConnect.isDenied) {
+      await Permission.bluetoothConnect.request();
+    }
+    // if (await Permission.locationWhenInUse.isDenied) {
+    //   await Permission.locationWhenInUse.request();
+    // }
+
+    setState(() {
+      granted = phoneStatus.isGranted && contactsStatus.isGranted;
+    });
+  }
+
+  Future<void> openOverlaySettings() async {
+    const packageName = 'com.example.spam_analyzer_v6';
+    final intent = AndroidIntent(
+      action: 'android.settings.action.MANAGE_OVERLAY_PERMISSION',
+      data: 'package:$packageName',
+      flags: <int>[Flag.FLAG_ACTIVITY_NEW_TASK],
+    );
+    await intent.launch();
+  }
+
+
   Future<void> getCallStateFromNative() async {
     try {
       final result = await _ch.invokeMethod('getCallState');
@@ -290,14 +236,12 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
         if (incomingNumber != null && incomingNumber.isNotEmpty) {
           matchedName = await _findContactName(incomingNumber);
         }
-        if (!mounted) return;
         setState(() {
           callStatus = mapped;
           currentNumber = incomingNumber;
           callerName = matchedName ?? "Unknown";
         });
       } else {
-        if (!mounted) return;
         setState(() {
           callStatus = null;
           currentNumber = null;
@@ -340,7 +284,7 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
       debugPrint("Error matching contact name: $e");
     }
     return null;
-    }
+  }
 
   String normalizeNumber(String number) {
     return number
@@ -352,7 +296,6 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
     if (!granted || !mounted) return;
     final st = state.status;
 
-    // Incoming edge → trigger capture once
     if (_lastStatus != PhoneStateStatus.CALL_INCOMING &&
         st == PhoneStateStatus.CALL_INCOMING) {
       await _maybeTriggerCapture();
@@ -372,7 +315,6 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
     }
   }
 
-  // -------------------- UI --------------------
 
   @override
   Widget build(BuildContext context) {
@@ -385,11 +327,11 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
           backgroundColor: Colors.black,
           appBar: AppBar(
             actions: [
-              _companionBadge(),
+              // _companionBadge(),
               const SizedBox(width: 8),
               const Padding(
                 padding: EdgeInsets.only(right: 8),
-                child: Text("v0.24"), // ⬅️ bump
+                child: Text("v0.23"),
               ),
             ],
             leading: IconButton(
@@ -469,34 +411,13 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
 
                         const SizedBox(height: 16),
 
-                        // ✅ Keep Alive (Companion) CTA
-                        if (_checkingCompanion)
-                          const Padding(
-                            padding: EdgeInsets.only(bottom: 8),
-                            child: CircularProgressIndicator(),
-                          ),
-                        if (_companionOk == true)
-                          _chip('Keep-Alive Active', Colors.greenAccent.shade400,
-                              const TextStyle(color: Colors.white))
-                        else
-                          ElevatedButton.icon(
-                            onPressed: _ensureCompanionAssociation,
-                            icon: const Icon(Icons.watch),
-                            label: const Text('Keep Alive (Pair Companion Device)'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.blueGrey,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                            ),
-                          ),
-
+                       
+                       
                         const SizedBox(height: 12),
-
-                        // Accessibility quick enable hint
                         FutureBuilder<bool>(
                           future: _isAccessibilityEnabledFromNative(),
-                          builder: (context, snap) {
-                            final enabled = snap.data ?? false;
+                          builder: (context, snapshot) {
+                            final enabled = snapshot.data ?? false;
                             if (!enabled) {
                               return ElevatedButton(
                                 onPressed: _openAccessibilitySettingsFromNative,
@@ -505,19 +426,6 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
                             }
                             return const SizedBox.shrink();
                           },
-                        ),
-
-                        const SizedBox(height: 20),
-
-                        // (Optional) Manual test button
-                        OutlinedButton.icon(
-                          onPressed: _maybeTriggerCapture,
-                          icon: const Icon(Icons.camera),
-                          label: const Text('Test capture now'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.white70,
-                            side: const BorderSide(color: Colors.white24),
-                          ),
                         ),
                       ],
                     ),
@@ -528,28 +436,61 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _companionBadge() {
-    if (_checkingCompanion) {
-      return const Padding(
-        padding: EdgeInsets.only(right: 10),
-        child: SizedBox(
-          height: 20,
-          width: 20,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-      );
+  // Widget _companionBadge() {
+  //   if (_checkingCompanion) {
+  //     return const Padding(
+  //       padding: EdgeInsets.only(right: 10),
+  //       child: SizedBox(
+  //         height: 20,
+  //         width: 20,
+  //         child: CircularProgressIndicator(strokeWidth: 2),
+  //       ),
+  //     );
+  //   }
+  //   if (_companionOk == true) {
+  //     return Padding(
+  //       padding: const EdgeInsets.only(right: 8),
+  //       child: _chip('Keep-Alive ON', Colors.green, const TextStyle(color: Colors.white, fontSize: 12)),
+  //     );
+  //   }
+  //   return Padding(
+  //     padding: const EdgeInsets.only(right: 8),
+  //     child: _chip('Keep-Alive OFF', Colors.orange, const TextStyle(color: Colors.white, fontSize: 12)),
+  //   );
+  // }
+
+  String _formatPhoneNumber(String number) {
+    if (number.length == 10) {
+      return '${number.substring(0, 3)} ${number.substring(3, 6)}-${number.substring(6)}';
     }
-    if (_companionOk == true) {
-      return Padding(
-        padding: const EdgeInsets.only(right: 8),
-        child: _chip('Keep-Alive ON', Colors.green, const TextStyle(color: Colors.white, fontSize: 12)),
-      );
-    }
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: _chip('Keep-Alive OFF', Colors.orange, const TextStyle(color: Colors.white, fontSize: 12)),
-    );
+    return number;
   }
+
+  Color _getStatusColor(PhoneStateStatus status) {
+    switch (status) {
+      case PhoneStateStatus.CALL_INCOMING:
+        return Colors.blue;
+      case PhoneStateStatus.CALL_STARTED:
+        return Colors.green;
+      case PhoneStateStatus.CALL_ENDED:
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  // String _getStatusText(PhoneStateStatus status) {
+  //   switch (status) {
+  //     case PhoneStateStatus.CALL_INCOMING:
+  //       return "INCOMING CALL";
+  //     case PhoneStateStatus.CALL_STARTED:
+  //       return "CALL IN PROGRESS";
+  //     case PhoneStateStatus.CALL_ENDED":
+  //       return "CALL ENDED";
+  //     default:
+  //       return "IDLE";
+  //   }
+  // }
 }
 
 Widget _chip(String text, Color color, TextStyle style) {
@@ -594,7 +535,7 @@ class _PermissionsPanel extends StatelessWidget {
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
           ),
-          child: const Text("Grant Phone, Contacts & Notifications", style: TextStyle(color: Colors.white)),
+          child: const Text("Grant Phone & Contact Permissions", style: TextStyle(color: Colors.white)),
         ),
         const SizedBox(height: 10),
         ElevatedButton(
@@ -620,3 +561,4 @@ class _PermissionsPanel extends StatelessWidget {
     );
   }
 }
+    

@@ -23,7 +23,6 @@ class CallStateWatcherService : Service() {
                 NotificationChannel(CH_ID, "Call Watcher", NotificationManager.IMPORTANCE_LOW)
             )
         }
-        // Foreground notification (POST_NOTIFICATIONS not required for FGS on 33+)
         startForeground(
             N_ID,
             NotificationCompat.Builder(this, CH_ID)
@@ -33,7 +32,7 @@ class CallStateWatcherService : Service() {
                 .setContentText("Listening for incoming calls")
                 .build()
         )
-        // TODO: Telephony listener to start/stop CallOverlayService as needed.
+        // TODO: Add your TelephonyManager/PhoneStateListener logic to start CallOverlayService
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

@@ -41,11 +41,9 @@ class DeletedCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(18),
         child: Column(
           children: [
-            // ===== Top area: chips + delete/restore actions over blurred image =====
             Stack(
               children: [
                 _PreviewBackground(url: item.screenshotUrl),
-                // gradient overlay
                 Positioned.fill(
                   child: DecoratedBox(
                     decoration: BoxDecoration(
@@ -68,18 +66,26 @@ class DeletedCard extends StatelessWidget {
                     spacing: 8,
                     runSpacing: 8,
                     children: [
-                      _Chip(label: (item.isSpam ?? false) ? 'Spam' : 'Clean',
-                        icon: (item.isSpam ?? false) ? Icons.warning_amber_rounded : Icons.shield_moon_outlined,
-                        color: (item.isSpam ?? false) ? Colors.amber : cs.primary,
+                      _Chip(
+                        label: (item.isSpam ?? false) ? 'Spam' : 'Clean',
+                        icon:
+                            (item.isSpam ?? false)
+                                ? Icons.warning_amber_rounded
+                                : Icons.shield_moon_outlined,
+                        color:
+                            (item.isSpam ?? false) ? Colors.amber : cs.primary,
                       ),
-                      _Chip(label: item.carrier?.isNotEmpty == true ? item.carrier! : 'Unknown',
+                      _Chip(
+                        label:
+                            item.carrier?.isNotEmpty == true
+                                ? item.carrier!
+                                : 'Unknown',
                         icon: Icons.cell_tower_rounded,
                         color: Colors.blueGrey.shade300,
                       ),
                     ],
                   ),
                 ),
-                // top-right actions (restore + delete forever)
                 Positioned(
                   top: 4,
                   right: 4,
@@ -95,25 +101,34 @@ class DeletedCard extends StatelessWidget {
                       IconButton(
                         tooltip: 'Delete permanently',
                         onPressed: onPermanentDelete,
-                        icon: const Icon(Icons.delete_forever_outlined, color: Colors.redAccent),
+                        icon: const Icon(
+                          Icons.delete_forever_outlined,
+                          color: Colors.redAccent,
+                        ),
                       ),
                     ],
                   ),
                 ),
-                // blurred inner thumbnail card (to mimic your screenshot feel)
                 Positioned.fill(
                   child: Align(
                     alignment: Alignment.center,
                     child: Container(
                       height: 120,
-                      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 22),
+                      margin: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 22,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.white.withOpacity(0.06),
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(color: Colors.white12, width: 1),
                       ),
                       child: const Center(
-                        child: Icon(Icons.image, color: Colors.white30, size: 36),
+                        child: Icon(
+                          Icons.image,
+                          color: Colors.white30,
+                          size: 36,
+                        ),
                       ),
                     ),
                   ),
@@ -130,24 +145,41 @@ class DeletedCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('#  Extracted: ${_safe(item.extractedNumber)}', style: const TextStyle(color: Colors.white70)),
+                  Text(
+                    '#  Extracted: ${_safe(item.extractedNumber)}',
+                    style: const TextStyle(color: Colors.white70),
+                  ),
                   const SizedBox(height: 8),
-                  Text('↗  To: ${_safe(item.toNumber, fallback: 'Unknown')}', style: const TextStyle(color: Colors.white70)),
+                  Text(
+                    '↗  To: ${_safe(item.toNumber, fallback: 'Unknown')}',
+                    style: const TextStyle(color: Colors.white70),
+                  ),
                   const SizedBox(height: 8),
-                  Text('🕒  Time: ${_formatTime(item.time)}', style: const TextStyle(color: Colors.white70)),
+                  Text(
+                    '🕒  Time: ${_formatTime(item.time)}',
+                    style: const TextStyle(color: Colors.white70),
+                  ),
                   const SizedBox(height: 10),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
                       IconButton(
                         tooltip: 'Copy',
-                        icon: const Icon(Icons.copy_rounded, color: Colors.white70, size: 20),
+                        icon: const Icon(
+                          Icons.copy_rounded,
+                          color: Colors.white70,
+                          size: 20,
+                        ),
                         onPressed: onCopy,
                       ),
                       const SizedBox(width: 6),
                       IconButton(
                         tooltip: 'Open',
-                        icon: const Icon(Icons.open_in_full, color: Colors.white70, size: 20),
+                        icon: const Icon(
+                          Icons.open_in_full,
+                          color: Colors.white70,
+                          size: 20,
+                        ),
                         onPressed: onOpen,
                       ),
                     ],
@@ -161,11 +193,11 @@ class DeletedCard extends StatelessWidget {
     );
   }
 
-  String _safe(String? v, {String fallback = ''}) => (v == null || v.trim().isEmpty) ? fallback : v;
+  String _safe(String? v, {String fallback = ''}) =>
+      (v == null || v.trim().isEmpty) ? fallback : v;
 
   String _formatTime(DateTime? dt) {
     if (dt == null) return '—';
-    // e.g., Sat, 09 Aug · 03:09 PM
     return DateFormat('EEE, dd MMM · hh:mm a').format(dt);
   }
 }
@@ -180,13 +212,15 @@ class _PreviewBackground extends StatelessWidget {
     if (url == null || url!.isEmpty) {
       return _blur(ph);
     }
-    return _blur(Image.network(
-      url!,
-      height: 180,
-      width: double.infinity,
-      fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) => ph,
-    ));
+    return _blur(
+      Image.network(
+        url!,
+        height: 180,
+        width: double.infinity,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => ph,
+      ),
+    );
   }
 
   Widget _blur(Widget child) {
@@ -224,7 +258,13 @@ class _Chip extends StatelessWidget {
         children: [
           Icon(icon, size: 14, color: Colors.white),
           const SizedBox(width: 6),
-          Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
         ],
       ),
     );

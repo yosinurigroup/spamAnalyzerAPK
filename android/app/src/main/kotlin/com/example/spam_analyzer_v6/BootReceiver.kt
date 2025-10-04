@@ -17,20 +17,20 @@ class BootReceiver : BroadcastReceiver() {
             Intent.ACTION_MY_PACKAGE_REPLACED,
             Intent.ACTION_USER_UNLOCKED -> {
                 Log.d("BootReceiver", "🔔 Action: ${intent.action}")
-                startServices(context)
+                startCallWatcherService(context)
             }
         }
     }
 
-    private fun startServices(ctx: Context) {
+    private fun startCallWatcherService(ctx: Context) {
         try {
             Handler(Looper.getMainLooper()).postDelayed({
-                ContextCompat.startForegroundService(ctx, Intent(ctx, CallStateWatcherService::class.java))
-                ContextCompat.startForegroundService(ctx, Intent(ctx, AccessibilityWatchdogService::class.java))
-                Log.d("BootReceiver", "✅ Services started (CallStateWatcher + Watchdog).")
+                val svcIntent = Intent(ctx, CallStateWatcherService::class.java)
+                ContextCompat.startForegroundService(ctx, svcIntent)
+                Log.d("BootReceiver", "✅ CallStateWatcherService started.")
             }, 1500)
         } catch (e: Exception) {
-            Log.e("BootReceiver", "❌ Failed to start services: ${e.message}", e)
+            Log.e("BootReceiver", "❌ Failed to start CallStateWatcherService: ${e.message}", e)
         }
     }
 }
