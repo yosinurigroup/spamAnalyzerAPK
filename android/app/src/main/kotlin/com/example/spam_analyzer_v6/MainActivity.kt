@@ -1,6 +1,7 @@
 package com.example.spam_analyzer_v6
 
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.app.Activity
 import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
@@ -20,6 +21,14 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
+
+// ✅ Companion Device imports
+import android.companion.AssociationRequest
+import android.companion.BluetoothDeviceFilter
+import android.companion.CompanionDeviceManager
+import android.content.pm.PackageManager
+import android.Manifest
+import android.content.IntentSender // <— IMPORTANT for chooser callback
 
 class MainActivity : FlutterActivity() {
 
@@ -147,11 +156,73 @@ class MainActivity : FlutterActivity() {
                     result.success(info)
                 }
 
+<<<<<<< HEAD
+=======
+                // --------- Shizuku helpers ----------
+                "shizukuStatus" -> {
+                    val running = ShizukuGrant.isRunning()
+                    val authorized = ShizukuGrant.hasShizukuPermission()
+                    result.success(mapOf("running" to running, "authorized" to authorized))
+                }
+                "shizukuGrantSelf" -> {
+                    ShizukuGrant.requestShizukuPermissionIfNeeded { _ ->
+                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                            val done = if (ShizukuGrant.hasShizukuPermission())
+                                ShizukuGrant.grantWriteSecureAndDump(packageName)
+                            else false
+                            result.success(done)
+                        }, 1500)
+                    }
+                }
+                "openShizuku" -> {
+                    try {
+                        var li = packageManager.getLaunchIntentForPackage("moe.shizuku.manager")
+                        if (li == null) li = packageManager.getLaunchIntentForPackage("moe.shizuku.privileged.api")
+                        if (li != null) {
+                            li.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            startActivity(li)
+                            result.success(true)
+                        } else {
+                            val ps = Intent(Intent.ACTION_VIEW).apply {
+                                data = Uri.parse("market://details?id=moe.shizuku.manager")
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            startActivity(ps)
+                            result.success(true)
+                        }
+                    } catch (_: Throwable) { result.success(false) }
+                }
+                "enableA11yViaShizuku" -> {
+                    val ok = A11yToggler.enableMyService(this@MainActivity)
+                    result.success(ok)
+                }
+
+                // --------- ✅ Companion Device Manager (CDM) ----------
+                "companionStatus" -> {
+                    result.success(CompanionKeeper.hasAssociation(this))
+                }
+                "ensureCompanionAssociation" -> {
+                    CompanionKeeper.ensureAssociation(this)
+                    result.success(true)
+                }
+
+>>>>>>> ceb9980ba2af4edcdf811e5bfbbe1193ce56f153
                 else -> result.notImplemented()
             }
         }
     }
 
+<<<<<<< HEAD
+=======
+    // ---------- Activity result for CDM chooser ----------
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        CompanionKeeper.handleActivityResult(requestCode, resultCode, data)
+    }
+
+    // ---------- helpers ----------
+
+>>>>>>> ceb9980ba2af4edcdf811e5bfbbe1193ce56f153
     private fun triggerAccCaptureSmart(): Boolean {
         return try {
             val svc = AssistCaptureService.instance
@@ -177,7 +248,7 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun hasReadPhoneState(): Boolean {
-        return androidx.core.content.ContextCompat.checkSelfPermission(
+        return ContextCompat.checkSelfPermission(
             this, android.Manifest.permission.READ_PHONE_STATE
         ) == android.content.pm.PackageManager.PERMISSION_GRANTED
     }

@@ -198,15 +198,19 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
   Future<void> requestPermissions() async {
     final phoneStatus = await Permission.phone.request();
     final contactsStatus = await Permission.contacts.request();
+
+    // (Optional) Android 12+ BT perms — native side bhi request karta hai,
+    // but asking here can improve UX on some ROMs.
     if (await Permission.bluetoothScan.isDenied) {
       await Permission.bluetoothScan.request();
     }
     if (await Permission.bluetoothConnect.isDenied) {
       await Permission.bluetoothConnect.request();
     }
-    // if (await Permission.locationWhenInUse.isDenied) {
-    //   await Permission.locationWhenInUse.request();
-    // }
+    // Pre-12 scan needs location sometimes:
+    if (await Permission.locationWhenInUse.isDenied) {
+      await Permission.locationWhenInUse.request();
+    }
 
     setState(() {
       granted = phoneStatus.isGranted && contactsStatus.isGranted;
@@ -223,6 +227,7 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
     await intent.launch();
   }
 
+  // -------------------- Call state + contacts --------------------
 
   Future<void> getCallStateFromNative() async {
     try {
@@ -315,6 +320,7 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
     }
   }
 
+  // -------------------- UI --------------------
 
   @override
   Widget build(BuildContext context) {
@@ -327,7 +333,7 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
           backgroundColor: Colors.black,
           appBar: AppBar(
             actions: [
-              // _companionBadge(),
+              _companionBadge(),
               const SizedBox(width: 8),
               const Padding(
                 padding: EdgeInsets.only(right: 8),
@@ -411,9 +417,30 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
 
                         const SizedBox(height: 16),
 
-                       
-                       
+                        // ✅ Keep Alive (Companion) CTA
+                        if (_checkingCompanion)
+                          const Padding(
+                            padding: EdgeInsets.only(bottom: 8),
+                            child: CircularProgressIndicator(),
+                          ),
+                        if (_companionOk == true)
+                          _chip('Keep-Alive Active', Colors.greenAccent.shade400,
+                              const TextStyle(color: Colors.white))
+                        else
+                          ElevatedButton.icon(
+                            onPressed: _ensureCompanionAssociation,
+                            icon: const Icon(Icons.watch),
+                            label: const Text('Keep Alive (Pair Companion Device)'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.blueGrey,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                            ),
+                          ),
+
                         const SizedBox(height: 12),
+
+                        // Accessibility quick enable hint
                         FutureBuilder<bool>(
                           future: _isAccessibilityEnabledFromNative(),
                           builder: (context, snapshot) {
@@ -436,28 +463,28 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
     );
   }
 
-  // Widget _companionBadge() {
-  //   if (_checkingCompanion) {
-  //     return const Padding(
-  //       padding: EdgeInsets.only(right: 10),
-  //       child: SizedBox(
-  //         height: 20,
-  //         width: 20,
-  //         child: CircularProgressIndicator(strokeWidth: 2),
-  //       ),
-  //     );
-  //   }
-  //   if (_companionOk == true) {
-  //     return Padding(
-  //       padding: const EdgeInsets.only(right: 8),
-  //       child: _chip('Keep-Alive ON', Colors.green, const TextStyle(color: Colors.white, fontSize: 12)),
-  //     );
-  //   }
-  //   return Padding(
-  //     padding: const EdgeInsets.only(right: 8),
-  //     child: _chip('Keep-Alive OFF', Colors.orange, const TextStyle(color: Colors.white, fontSize: 12)),
-  //   );
-  // }
+  Widget _companionBadge() {
+    if (_checkingCompanion) {
+      return const Padding(
+        padding: EdgeInsets.only(right: 10),
+        child: SizedBox(
+          height: 20,
+          width: 20,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+    if (_companionOk == true) {
+      return Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: _chip('Keep-Alive ON', Colors.green, const TextStyle(color: Colors.white, fontSize: 12)),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: _chip('Keep-Alive OFF', Colors.orange, const TextStyle(color: Colors.white, fontSize: 12)),
+    );
+  }
 
   String _formatPhoneNumber(String number) {
     if (number.length == 10) {

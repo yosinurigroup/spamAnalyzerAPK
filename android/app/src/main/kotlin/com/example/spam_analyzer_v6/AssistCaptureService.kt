@@ -5,10 +5,13 @@ import android.accessibilityservice.AccessibilityService.ScreenshotResult
 import android.accessibilityservice.AccessibilityService.TakeScreenshotCallback
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.Looper
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import com.google.mlkit.vision.common.InputImage
@@ -36,6 +39,7 @@ class AssistCaptureService : AccessibilityService() {
     companion object {
         private const val TAG = "AssistCaptureService"
 
+<<<<<<< HEAD
         // === Public actions for app-internal broadcasts ===
         const val ACTION_CAPTURE_NOW       = "com.example.spam_analyzer_v6.CAPTURE_NOW"
         const val ACTION_CAPTURED_OK       = "com.example.spam_analyzer_v6.CAPTURED_OK"
@@ -45,6 +49,17 @@ class AssistCaptureService : AccessibilityService() {
         // ✅ Added for Watchdog <-> A11y state sync
         const val ACTION_A11Y_STATE        = "com.example.spam_analyzer_v6.ACTION_A11Y_STATE"
         const val EXTRA_BOUND              = "extra_bound"
+=======
+        // intents
+        const val ACTION_CAPTURE_NOW = "com.example.spam_analyzer_v6.CAPTURE_NOW"
+        const val ACTION_CAPTURED_OK = "com.example.spam_analyzer_v6.CAPTURED_OK"
+        const val ACTION_CAPTURED_ERR = "com.example.spam_analyzer_v6.CAPTURED_ERR"
+        const val ACTION_REFRESH_KEYWORDS = "com.example.spam_analyzer_v6.REFRESH_KEYWORDS"
+
+        // watchdog state
+        const val ACTION_A11Y_STATE = "com.example.spam_analyzer_v6.ACTION_A11Y_STATE"
+        const val EXTRA_BOUND = "extra_bound"
+>>>>>>> ceb9980ba2af4edcdf811e5bfbbe1193ce56f153
 
         @Volatile internal var instance: AssistCaptureService? = null
 
@@ -55,13 +70,8 @@ class AssistCaptureService : AccessibilityService() {
 
         /** Static keywords only (no API) */
         private val STATIC_KEYWORDS: Set<String> = setOf(
-            "unknown",
-            "scam alert",
-            "likely",
-            "telemarketing",
-            "spam",
-            "suspected spam",
-            "suspected"
+            "unknown", "scam alert", "likely", "telemarketing",
+            "spam", "suspected spam", "suspected"
         )
 
         // --- Small helper to notify watchdog about bind state ---
@@ -91,6 +101,21 @@ class AssistCaptureService : AccessibilityService() {
 
     @Volatile private var tzForNext: String? = null
     @Volatile private var localISOForNext: String? = null
+
+    // ---- heartbeats to watchdog (every 2 min) ----
+    private val beatH = Handler(Looper.getMainLooper())
+    private val beatR = object : Runnable {
+        override fun run() {
+            sendA11yState(true)
+            beatH.postDelayed(this, 120_000L)
+        }
+    }
+    private fun startHeartbeats() { beatH.removeCallbacksAndMessages(null); beatH.post(beatR) }
+    private fun stopHeartbeats()  { beatH.removeCallbacksAndMessages(null) }
+    private fun sendA11yState(bound: Boolean) {
+        try { sendBroadcast(Intent(ACTION_A11Y_STATE).putExtra(EXTRA_BOUND, bound)) }
+        catch (_: Throwable) {}
+    }
 
     private val httpClient by lazy {
         OkHttpClient.Builder()
@@ -138,6 +163,7 @@ class AssistCaptureService : AccessibilityService() {
         val th = HandlerThread("assist-cap"); th.start()
         workerHandler = Handler(th.looper)
 
+<<<<<<< HEAD
         // warm-up (static keywords)
         workerHandler.post { safeRefreshKeywordsBlocking() }
     }
@@ -146,20 +172,39 @@ class AssistCaptureService : AccessibilityService() {
         // 🔔 mark unbound
         sendA11yState(this, false)
         instance = null
+=======
+        // bound + heartbeats
+        sendA11yState(true)
+        startHeartbeats()
+
+        // warm-up
+        workerHandler.post { safeRefreshKeywordsBlocking() }
+    }
+
+    override fun onUnbind(intent: Intent?) = run {
+        instance = null
+        sendA11yState(false)
+        stopHeartbeats()
+>>>>>>> ceb9980ba2af4edcdf811e5bfbbe1193ce56f153
         super.onUnbind(intent)
     }
 
     override fun onDestroy() {
         sendA11yState(this, false)
         instance = null
+        stopHeartbeats()
         super.onDestroy()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
     override fun onInterrupt() { Log.w(TAG, "⚠️ Accessibility interrupted") }
 
+<<<<<<< HEAD
     // ===== Commands (broadcasts) =====
     override fun onStartCommand(intent: android.content.Intent?, flags: Int, startId: Int): Int {
+=======
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+>>>>>>> ceb9980ba2af4edcdf811e5bfbbe1193ce56f153
         when (intent?.action) {
             ACTION_CAPTURE_NOW -> {
                 val sid = intent.getStringExtra("sessionId")
@@ -169,7 +214,7 @@ class AssistCaptureService : AccessibilityService() {
             }
             ACTION_REFRESH_KEYWORDS -> postRefreshKeywords()
         }
-        return super.onStartCommand(intent, flags, startId)
+        return START_NOT_STICKY
     }
 
     private fun postRefreshKeywords() {
@@ -205,9 +250,14 @@ class AssistCaptureService : AccessibilityService() {
                 override fun onSuccess(screenshot: ScreenshotResult) {
                     if (!savedThisAttempt.compareAndSet(false, true)) { Log.d(TAG, "[$tag] ignored"); return }
                     try {
-                        val bmp = screenshot.hardwareBuffer?.use { Bitmap.wrapHardwareBuffer(it, screenshot.colorSpace) }
-                        if (bmp != null) {
-                            ocrThenUpload(bmp)
+                        // ---- HW → SW copy to avoid GPU/hardware leaks ----
+                        val bmpHw = screenshot.hardwareBuffer?.use { Bitmap.wrapHardwareBuffer(it, screenshot.colorSpace) }
+                        if (bmpHw != null) {
+                            val bmpSw = Bitmap.createBitmap(bmpHw.width, bmpHw.height, Bitmap.Config.ARGB_8888)
+                            Canvas(bmpSw).drawBitmap(bmpHw, 0f, 0f, null)
+                            bmpHw.recycle()
+
+                            ocrThenUpload(bmpSw)
                             lastSavedAt = System.currentTimeMillis()
                             lastHandledSessionId = currentSessionId
                             Log.i(TAG, "[$tag] ✅ OCR done → proceeding to upload")
@@ -384,9 +434,9 @@ class AssistCaptureService : AccessibilityService() {
     }
 
     private fun sendCaptureOk(token: String) {
-        sendBroadcast(android.content.Intent(ACTION_CAPTURED_OK).apply { putExtra("path", token) })
+        sendBroadcast(Intent(ACTION_CAPTURED_OK).apply { putExtra("path", token) })
     }
     private fun sendCaptureError(code: Int) {
-        sendBroadcast(android.content.Intent(ACTION_CAPTURED_ERR).apply { putExtra("code", code) })
+        sendBroadcast(Intent(ACTION_CAPTURED_ERR).apply { putExtra("code", code) })
     }
 }
