@@ -7,7 +7,6 @@ import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.Canvas
 import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
@@ -39,27 +38,15 @@ class AssistCaptureService : AccessibilityService() {
     companion object {
         private const val TAG = "AssistCaptureService"
 
-<<<<<<< HEAD
-        // === Public actions for app-internal broadcasts ===
-        const val ACTION_CAPTURE_NOW       = "com.example.spam_analyzer_v6.CAPTURE_NOW"
-        const val ACTION_CAPTURED_OK       = "com.example.spam_analyzer_v6.CAPTURED_OK"
-        const val ACTION_CAPTURED_ERR      = "com.example.spam_analyzer_v6.CAPTURED_ERR"
-        const val ACTION_REFRESH_KEYWORDS  = "com.example.spam_analyzer_v6.REFRESH_KEYWORDS"
-
-        // ✅ Added for Watchdog <-> A11y state sync
-        const val ACTION_A11Y_STATE        = "com.example.spam_analyzer_v6.ACTION_A11Y_STATE"
-        const val EXTRA_BOUND              = "extra_bound"
-=======
-        // intents
+        // Public actions for app-internal broadcasts
         const val ACTION_CAPTURE_NOW = "com.example.spam_analyzer_v6.CAPTURE_NOW"
         const val ACTION_CAPTURED_OK = "com.example.spam_analyzer_v6.CAPTURED_OK"
         const val ACTION_CAPTURED_ERR = "com.example.spam_analyzer_v6.CAPTURED_ERR"
         const val ACTION_REFRESH_KEYWORDS = "com.example.spam_analyzer_v6.REFRESH_KEYWORDS"
 
-        // watchdog state
+        // Watchdog state sync
         const val ACTION_A11Y_STATE = "com.example.spam_analyzer_v6.ACTION_A11Y_STATE"
         const val EXTRA_BOUND = "extra_bound"
->>>>>>> ceb9980ba2af4edcdf811e5bfbbe1193ce56f153
 
         @Volatile internal var instance: AssistCaptureService? = null
 
@@ -74,13 +61,17 @@ class AssistCaptureService : AccessibilityService() {
             "spam", "suspected spam", "suspected"
         )
 
-        // --- Small helper to notify watchdog about bind state ---
+        // Helper to notify watchdog about bind state
         fun sendA11yState(ctx: Context, bound: Boolean) {
-            ctx.sendBroadcast(
-                android.content.Intent(ACTION_A11Y_STATE)
-                    .setPackage(ctx.packageName)
-                    .putExtra(EXTRA_BOUND, bound)
-            )
+            try {
+                ctx.sendBroadcast(
+                    Intent(ACTION_A11Y_STATE)
+                        .setPackage(ctx.packageName)
+                        .putExtra(EXTRA_BOUND, bound)
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "Error sending A11y state: ${e.message}")
+            }
         }
 
         fun requestCapture() = requestCapture(null, CAPTURE_DELAY_MS)
@@ -95,6 +86,7 @@ class AssistCaptureService : AccessibilityService() {
     }
 
     private lateinit var workerHandler: Handler
+    private lateinit var workerThread: HandlerThread
     @Volatile private var capInFlight = false
     @Volatile private var currentSessionId: String? = null
     private val savedThisAttempt = AtomicBoolean(false)
@@ -102,7 +94,7 @@ class AssistCaptureService : AccessibilityService() {
     @Volatile private var tzForNext: String? = null
     @Volatile private var localISOForNext: String? = null
 
-    // ---- heartbeats to watchdog (every 2 min) ----
+    // Heartbeats to watchdog (every 2 min)
     private val beatH = Handler(Looper.getMainLooper())
     private val beatR = object : Runnable {
         override fun run() {
@@ -110,11 +102,26 @@ class AssistCaptureService : AccessibilityService() {
             beatH.postDelayed(this, 120_000L)
         }
     }
-    private fun startHeartbeats() { beatH.removeCallbacksAndMessages(null); beatH.post(beatR) }
-    private fun stopHeartbeats()  { beatH.removeCallbacksAndMessages(null) }
+    
+    private fun startHeartbeats() { 
+        beatH.removeCallbacksAndMessages(null)
+        beatH.post(beatR)
+    }
+    
+    private fun stopHeartbeats() { 
+        beatH.removeCallbacksAndMessages(null)
+    }
+    
     private fun sendA11yState(bound: Boolean) {
-        try { sendBroadcast(Intent(ACTION_A11Y_STATE).putExtra(EXTRA_BOUND, bound)) }
-        catch (_: Throwable) {}
+        try {
+            sendBroadcast(
+                Intent(ACTION_A11Y_STATE)
+                    .setPackage(packageName)
+                    .putExtra(EXTRA_BOUND, bound)
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Error sending state: ${e.message}")
+        }
     }
 
     private val httpClient by lazy {
@@ -150,61 +157,67 @@ class AssistCaptureService : AccessibilityService() {
         instance = this
         Log.i(TAG, "✅ Accessibility service connected")
 
-        // 🔔 tell watchdog we're bound
+        // Tell watchdog we're bound
         sendA11yState(this, true)
 
-        serviceInfo = serviceInfo.apply {
-            eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
-            feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
-            notificationTimeout = 50
-            flags = AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
-                    AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS
+        try {
+            serviceInfo = serviceInfo.apply {
+                eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+                feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
+                notificationTimeout = 50
+                flags = AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
+                        AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting service info: ${e.message}", e)
         }
-        val th = HandlerThread("assist-cap"); th.start()
-        workerHandler = Handler(th.looper)
 
-<<<<<<< HEAD
-        // warm-up (static keywords)
-        workerHandler.post { safeRefreshKeywordsBlocking() }
-    }
+        workerThread = HandlerThread("assist-cap")
+        workerThread.start()
+        workerHandler = Handler(workerThread.looper)
 
-    override fun onUnbind(intent: android.content.Intent?) = run {
-        // 🔔 mark unbound
-        sendA11yState(this, false)
-        instance = null
-=======
-        // bound + heartbeats
+        // Bound + heartbeats
         sendA11yState(true)
         startHeartbeats()
 
-        // warm-up
+        // Warm-up (static keywords)
         workerHandler.post { safeRefreshKeywordsBlocking() }
     }
 
-    override fun onUnbind(intent: Intent?) = run {
-        instance = null
-        sendA11yState(false)
-        stopHeartbeats()
->>>>>>> ceb9980ba2af4edcdf811e5bfbbe1193ce56f153
-        super.onUnbind(intent)
+    override fun onUnbind(intent: Intent?): Boolean {
+        try {
+            instance = null
+            sendA11yState(false)
+            stopHeartbeats()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in onUnbind: ${e.message}", e)
+        }
+        return super.onUnbind(intent)
     }
 
     override fun onDestroy() {
-        sendA11yState(this, false)
-        instance = null
-        stopHeartbeats()
+        try {
+            sendA11yState(false)
+            stopHeartbeats()
+            workerHandler.removeCallbacksAndMessages(null)
+            if (::workerThread.isInitialized) {
+                workerThread.quitSafely()
+            }
+            instance = null
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in onDestroy: ${e.message}", e)
+        }
         super.onDestroy()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
-    override fun onInterrupt() { Log.w(TAG, "⚠️ Accessibility interrupted") }
+    
+    override fun onInterrupt() {
+        Log.w(TAG, "⚠️ Accessibility interrupted")
+        sendA11yState(false)
+    }
 
-<<<<<<< HEAD
-    // ===== Commands (broadcasts) =====
-    override fun onStartCommand(intent: android.content.Intent?, flags: Int, startId: Int): Int {
-=======
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
->>>>>>> ceb9980ba2af4edcdf811e5bfbbe1193ce56f153
         when (intent?.action) {
             ACTION_CAPTURE_NOW -> {
                 val sid = intent.getStringExtra("sessionId")
@@ -226,9 +239,18 @@ class AssistCaptureService : AccessibilityService() {
 
     private fun scheduleSingle(sessionId: String?, @Suppress("UNUSED_PARAMETER") delayMs: Long) {
         val now = System.currentTimeMillis()
-        if (now - lastSavedAt < MIN_GAP_MS) { Log.d(TAG, "Too soon → drop"); return }
-        if (sessionId != null && sessionId == lastHandledSessionId) { Log.d(TAG, "Already handled sid=$sessionId → drop"); return }
-        if (capInFlight) { Log.d(TAG, "Capture in-flight → drop"); return }
+        if (now - lastSavedAt < MIN_GAP_MS) {
+            Log.d(TAG, "Too soon → drop")
+            return
+        }
+        if (sessionId != null && sessionId == lastHandledSessionId) {
+            Log.d(TAG, "Already handled sid=$sessionId → drop")
+            return
+        }
+        if (capInFlight) {
+            Log.d(TAG, "Capture in-flight → drop")
+            return
+        }
 
         currentSessionId = sessionId
         savedThisAttempt.set(false)
@@ -241,34 +263,83 @@ class AssistCaptureService : AccessibilityService() {
     private fun tryCaptureOnce() {
         val tag = "single"
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-            Log.w(TAG, "[$tag] API < 33, not supported"); sendCaptureError(-10); finishAttempt(); return
+            Log.w(TAG, "[$tag] API < 33, not supported")
+            sendCaptureError(-10)
+            finishAttempt()
+            return
         }
+        
         Log.i(TAG, "[$tag] tryCapture start")
+        var exec: java.util.concurrent.ExecutorService? = null
+        
         try {
-            val exec = Executors.newSingleThreadExecutor()
+            exec = Executors.newSingleThreadExecutor()
+            
             takeScreenshot(0, exec, object : TakeScreenshotCallback {
                 override fun onSuccess(screenshot: ScreenshotResult) {
-                    if (!savedThisAttempt.compareAndSet(false, true)) { Log.d(TAG, "[$tag] ignored"); return }
+                    if (!savedThisAttempt.compareAndSet(false, true)) {
+                        Log.d(TAG, "[$tag] ignored duplicate")
+                        exec?.shutdown()
+                        return
+                    }
+                    
+                    var bmp: Bitmap? = null
                     try {
-                        // ---- HW → SW copy to avoid GPU/hardware leaks ----
-                        val bmpHw = screenshot.hardwareBuffer?.use { Bitmap.wrapHardwareBuffer(it, screenshot.colorSpace) }
-                        if (bmpHw != null) {
-                            val bmpSw = Bitmap.createBitmap(bmpHw.width, bmpHw.height, Bitmap.Config.ARGB_8888)
-                            Canvas(bmpSw).drawBitmap(bmpHw, 0f, 0f, null)
-                            bmpHw.recycle()
-
-                            ocrThenUpload(bmpSw)
+                        // Simple approach: wrap hardware buffer directly (works on most devices)
+                        bmp = screenshot.hardwareBuffer?.use {
+                            Bitmap.wrapHardwareBuffer(it, screenshot.colorSpace)
+                        }
+                        
+                        if (bmp != null && !bmp.isRecycled) {
+                            ocrThenUpload(bmp)
                             lastSavedAt = System.currentTimeMillis()
                             lastHandledSessionId = currentSessionId
                             Log.i(TAG, "[$tag] ✅ OCR done → proceeding to upload")
                             sendCaptureOk("direct-upload")
-                        } else { Log.e(TAG, "[$tag] bitmap null"); sendCaptureError(-2) }
-                    } catch (t: Throwable) { Log.e(TAG, "[$tag] exception: ${t.message}", t); sendCaptureError(-3) }
-                    finally { finishAttempt() }
+                        } else {
+                            Log.e(TAG, "[$tag] bitmap null or recycled")
+                            sendCaptureError(-2)
+                        }
+                    } catch (t: Throwable) {
+                        Log.e(TAG, "[$tag] exception: ${t.message}", t)
+                        sendCaptureError(-3)
+                        // Clean up bitmap on error
+                        try {
+                            bmp?.recycle()
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error recycling bitmap: ${e.message}")
+                        }
+                    } finally {
+                        finishAttempt()
+                        try {
+                            exec?.shutdown()
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error shutting down executor: ${e.message}")
+                        }
+                    }
                 }
-                override fun onFailure(errorCode: Int) { Log.w(TAG, "[$tag] ❌ onFailure errorCode=$errorCode"); sendCaptureError(errorCode); finishAttempt() }
+                
+                override fun onFailure(errorCode: Int) {
+                    Log.w(TAG, "[$tag] ❌ onFailure errorCode=$errorCode")
+                    sendCaptureError(errorCode)
+                    finishAttempt()
+                    try {
+                        exec?.shutdown()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error shutting down executor: ${e.message}")
+                    }
+                }
             })
-        } catch (t: Throwable) { Log.e(TAG, "[$tag] tryCapture exception: ${t.message}", t); sendCaptureError(-99); finishAttempt() }
+        } catch (t: Throwable) {
+            Log.e(TAG, "[$tag] tryCapture exception: ${t.message}", t)
+            sendCaptureError(-99)
+            finishAttempt()
+            try {
+                exec?.shutdown()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error shutting down executor: ${e.message}")
+            }
+        }
     }
 
     private fun finishAttempt() {
@@ -281,24 +352,42 @@ class AssistCaptureService : AccessibilityService() {
     private fun getBearerToken(): String? = try {
         val sp = applicationContext.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
         val raw = sp.getString("flutter.auth_token", null)?.trim()
-        if (!raw.isNullOrEmpty()) { Log.d(TAG, "Bearer token present (len=${raw.length})"); raw } else { Log.w(TAG, "No token found"); null }
-    } catch (t: Throwable) { Log.e(TAG, "Token read error: ${t.message}", t); null }
+        if (!raw.isNullOrEmpty()) {
+            Log.d(TAG, "Bearer token present (len=${raw.length})")
+            raw
+        } else {
+            Log.w(TAG, "No token found")
+            null
+        }
+    } catch (t: Throwable) {
+        Log.e(TAG, "Token read error: ${t.message}", t)
+        null
+    }
 
     // ===================== KEYWORDS (STATIC) =====================
     private fun logKw(msg: String) = Log.d(TAG, "[KW] $msg")
 
     private fun normalizeForMatch(s: String?): String {
         if (s == null) return ""
-        val nfkc = try { Normalizer.normalize(s, Normalizer.Form.NFKC) } catch (_: Throwable) { s }
+        val nfkc = try {
+            Normalizer.normalize(s, Normalizer.Form.NFKC)
+        } catch (_: Throwable) {
+            s
+        }
         return nfkc.lowercase().replace(Regex("\\s+"), " ").trim()
     }
 
     private fun buildKeywordsPattern(kw: Set<String>): Regex {
-        val escapedAlternatives = kw.mapNotNull { it.trim().takeIf { s -> s.isNotEmpty() } }.map { k ->
+        val escapedAlternatives = kw.mapNotNull {
+            it.trim().takeIf { s -> s.isNotEmpty() }
+        }.map { k ->
             val parts = k.split(Regex("\\s+")).filter { it.isNotEmpty() }.map { Regex.escape(it) }
             if (parts.isEmpty()) null else parts.joinToString("\\s+")
         }.filterNotNull()
-        return if (escapedAlternatives.isEmpty()) Regex("""a\A""") else {
+        
+        return if (escapedAlternatives.isEmpty()) {
+            Regex("""a\A""")
+        } else {
             val union = escapedAlternatives.joinToString("|")
             Regex("""\b(?:$union)\b""", RegexOption.IGNORE_CASE)
         }
@@ -312,10 +401,12 @@ class AssistCaptureService : AccessibilityService() {
 
     private fun firstHitInLines(result: Text, kw: Set<String>): String? {
         val pat = buildKeywordsPattern(kw)
-        for (b in result.textBlocks) for (line in b.lines) {
-            val txt = normalizeForMatch(line.text ?: "")
-            val m = pat.find(txt)
-            if (m != null) return m.value
+        for (b in result.textBlocks) {
+            for (line in b.lines) {
+                val txt = normalizeForMatch(line.text ?: "")
+                val m = pat.find(txt)
+                if (m != null) return m.value
+            }
         }
         return null
     }
@@ -325,6 +416,7 @@ class AssistCaptureService : AccessibilityService() {
     }
 
     private fun getKeywordsCached(): Set<String> = staticKeywordsNormalized
+    
     private fun safeRefreshKeywordsBlocking() {
         logKw("using static keywords only; nothing to refresh")
     }
@@ -337,22 +429,30 @@ class AssistCaptureService : AccessibilityService() {
 
             recognizer.process(image)
                 .addOnSuccessListener { result: Text ->
-                    val rawText = result.text ?: ""
-                    val fullTextNorm = normalizeForMatch(rawText)
+                    try {
+                        val rawText = result.text ?: ""
+                        val fullTextNorm = normalizeForMatch(rawText)
 
-                    Log.i(TAG, "📝 OCR raw (first 400): ${rawText.take(400).replace("\n", "\\n")}")
-                    Log.i(TAG, "📝 OCR normalized (first 400): ${fullTextNorm.take(400)}")
+                        Log.i(TAG, "📝 OCR raw (first 400): ${rawText.take(400).replace("\n", "\\n")}")
+                        Log.i(TAG, "📝 OCR normalized (first 400): ${fullTextNorm.take(400)}")
 
-                    val keywords = getKeywordsCached()
-                    Log.i(TAG, "📦 Keywords in use (${keywords.size}): ${keywords.joinToString(", ")}")
+                        val keywords = getKeywordsCached()
+                        Log.i(TAG, "📦 Keywords in use (${keywords.size}): ${keywords.joinToString(", ")}")
 
-                    val (hit, matched) = containsKeyword(fullTextNorm, keywords)
-                    val firstHitLine = if (hit) matched ?: firstHitInLines(result, keywords) else firstHitInLines(result, keywords)
+                        val (hit, matched) = containsKeyword(fullTextNorm, keywords)
+                        val firstHitLine = if (hit) matched ?: firstHitInLines(result, keywords) else firstHitInLines(result, keywords)
 
-                    if (hit) Log.i(TAG, "🔎 MATCHED keyword: '${firstHitLine ?: matched}'")
-                    else Log.i(TAG, "⚪ OCR: no keyword found in ${keywords.size} keywords")
+                        if (hit) {
+                            Log.i(TAG, "🔎 MATCHED keyword: '${firstHitLine ?: matched}'")
+                        } else {
+                            Log.i(TAG, "⚪ OCR: no keyword found in ${keywords.size} keywords")
+                        }
 
-                    directUploadBitmap(bitmap, hit)
+                        directUploadBitmap(bitmap, hit)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error processing OCR result: ${e.message}", e)
+                        directUploadBitmap(bitmap, false)
+                    }
                 }
                 .addOnFailureListener { e ->
                     Log.e(TAG, "OCR failure: ${e.message}", e)
@@ -365,7 +465,14 @@ class AssistCaptureService : AccessibilityService() {
     }
 
     private fun directUploadBitmap(bitmap: Bitmap, isSpam: Boolean) {
+        var bitmapToRecycle: Bitmap? = bitmap
         try {
+            // Check if bitmap is valid before processing
+            if (bitmap.isRecycled) {
+                Log.e(TAG, "Bitmap already recycled, cannot upload")
+                return
+            }
+
             val tzId = tzForNext ?: currentTzId()
             val localISO = localISOForNext ?: localIsoNow(tzId)
             Log.i(TAG, "🕒 using tz=$tzId localISO=$localISO")
@@ -373,15 +480,24 @@ class AssistCaptureService : AccessibilityService() {
             val baos = ByteArrayOutputStream()
             bitmap.compress(Bitmap.CompressFormat.JPEG, 85, baos)
             val bytes = baos.toByteArray()
+            baos.close()
+            
+            // Recycle bitmap after compression (critical for memory management)
+            try {
+                bitmap.recycle()
+                bitmapToRecycle = null
+            } catch (e: Exception) {
+                Log.e(TAG, "Error recycling bitmap: ${e.message}")
+            }
 
             val imageReqBody = bytes.toRequestBody("image/jpeg".toMediaTypeOrNull())
             val imagePart = MultipartBody.Part.createFormData("image", "screenshot.jpg", imageReqBody)
 
-            val toNumber       = (LastOverlayInfo.callTo ?: MainActivity.storedCallTo ?: "").ifBlank { "" }
-            val carrier        = (LastOverlayInfo.carrier ?: MainActivity.storedCarrier ?: "").ifBlank { "" }
+            val toNumber = (LastOverlayInfo.callTo ?: MainActivity.storedCallTo ?: "").ifBlank { "" }
+            val carrier = (LastOverlayInfo.carrier ?: MainActivity.storedCarrier ?: "").ifBlank { "" }
             val incomingNumber = LastOverlayInfo.incomingNumber ?: "Unknown"
-            val callId         = LastOverlayInfo.callId ?: "N/A"
-            val timestamp      = LastOverlayInfo.timestamp ?: "N/A"
+            val callId = LastOverlayInfo.callId ?: "N/A"
+            val timestamp = LastOverlayInfo.timestamp ?: "N/A"
 
             val name = toNumber.ifBlank { "Unknown" }
 
@@ -421,22 +537,45 @@ class AssistCaptureService : AccessibilityService() {
                 override fun onFailure(call: Call, e: java.io.IOException) {
                     Log.e(TAG, "⬇️ upload failed: ${e.message}", e)
                 }
+                
                 override fun onResponse(call: Call, response: Response) {
                     response.use {
                         val body = it.body?.string()
                         Log.i(TAG, "⬆️ HTTP ${it.code} ${it.message}")
                         Log.i(TAG, "⬆️ URL was: ${call.request().url}")
-                        if (!it.isSuccessful) Log.e(TAG, "Body: $body") else Log.i(TAG, "Body: $body")
+                        if (!it.isSuccessful) {
+                            Log.e(TAG, "Body: $body")
+                        } else {
+                            Log.i(TAG, "Body: $body")
+                        }
                     }
                 }
             })
-        } catch (t: Throwable) { Log.e(TAG, "directUploadBitmap crash: ${t.message}", t) }
+        } catch (t: Throwable) {
+            Log.e(TAG, "directUploadBitmap crash: ${t.message}", t)
+        } finally {
+            // Ensure bitmap is recycled even if upload fails
+            try {
+                bitmapToRecycle?.recycle()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error recycling bitmap in finally: ${e.message}")
+            }
+        }
     }
 
     private fun sendCaptureOk(token: String) {
-        sendBroadcast(Intent(ACTION_CAPTURED_OK).apply { putExtra("path", token) })
+        try {
+            sendBroadcast(Intent(ACTION_CAPTURED_OK).apply { putExtra("path", token) })
+        } catch (e: Exception) {
+            Log.e(TAG, "Error sending capture OK: ${e.message}")
+        }
     }
+    
     private fun sendCaptureError(code: Int) {
-        sendBroadcast(Intent(ACTION_CAPTURED_ERR).apply { putExtra("code", code) })
+        try {
+            sendBroadcast(Intent(ACTION_CAPTURED_ERR).apply { putExtra("code", code) })
+        } catch (e: Exception) {
+            Log.e(TAG, "Error sending capture error: ${e.message}")
+        }
     }
 }

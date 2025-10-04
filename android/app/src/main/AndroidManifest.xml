@@ -16,19 +16,15 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
-    android:usesPermissionFlags="neverForLocation" />
+        android:usesPermissionFlags="neverForLocation" />
     <uses-feature android:name="android.software.companion_device_setup" android:required="false" />
-<uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
 
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
-<<<<<<< HEAD
-=======
-    <!-- NOTE: mediaProjection permission NOT needed for Accessibility.takeScreenshot() -->
-
+    
     <!-- Battery optimization request -->
->>>>>>> ceb9980ba2af4edcdf811e5bfbbe1193ce56f153
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
 
@@ -39,23 +35,13 @@
     <uses-permission android:name="android.permission.DUMP" tools:ignore="ProtectedPermissions"/>
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
-<<<<<<< HEAD
-=======
-    <!-- ✅ Companion Device / Bluetooth (for background-kill resistance) -->
->>>>>>> ceb9980ba2af4edcdf811e5bfbbe1193ce56f153
+    <!-- Companion Device / Bluetooth (for background-kill resistance) -->
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
     <!-- Android 12+ runtime BT permissions -->
     <uses-permission
         android:name="android.permission.BLUETOOTH_CONNECT"
         android:usesPermissionFlags="neverForLocation" />
-<<<<<<< HEAD
-   
-=======
-    <uses-permission
-        android:name="android.permission.BLUETOOTH_SCAN"
-        android:usesPermissionFlags="neverForLocation" />
     <!-- Pre-Android 12 scanning may need location -->
->>>>>>> ceb9980ba2af4edcdf811e5bfbbe1193ce56f153
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 
     <application

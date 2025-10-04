@@ -110,7 +110,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 8),
-            child: Text("v0.23"),
+            child: Text("v0.34", style: TextStyle(color: Colors.black87)),
           ),
         ],
         title: const Text(

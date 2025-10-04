@@ -105,11 +105,26 @@ class CallOverlayService : Service() {
     }
 
     private fun showOverlay(number: String, callId: String, timestamp: String, callTo: String, carrier: String) {
-        overlayView?.let { v -> try { (getSystemService(WINDOW_SERVICE) as WindowManager).removeView(v) } catch (_: Exception) {} }
-        overlayView = null
+        try {
+            overlayView?.let { v ->
+                try {
+                    (getSystemService(WINDOW_SERVICE) as? WindowManager)?.removeView(v)
+                } catch (e: Exception) {
+                    Log.e("CallOverlayService", "Error removing existing overlay: ${e.message}")
+                }
+            }
+            overlayView = null
 
-        val inflater = getSystemService(Context.LAYOUT_INFLATER_SERVICE) as LayoutInflater
-        overlayView = inflater.inflate(R.layout.overlay_call_box, null)
+            val inflater = getSystemService(Context.LAYOUT_INFLATER_SERVICE) as? LayoutInflater
+            if (inflater == null) {
+                Log.e("CallOverlayService", "LayoutInflater is null")
+                return
+            }
+            overlayView = inflater.inflate(R.layout.overlay_call_box, null)
+        } catch (e: Exception) {
+            Log.e("CallOverlayService", "Error inflating overlay: ${e.message}", e)
+            return
+        }
 
         overlayView?.findViewById<TextView>(R.id.caller_number)?.text = "📞 $number"
         overlayView?.findViewById<TextView>(R.id.call_id)?.text = "ID: $callId"
@@ -134,9 +149,16 @@ class CallOverlayService : Service() {
             PixelFormat.TRANSLUCENT
         ).apply { gravity = Gravity.CENTER }
 
-        windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-        try { windowManager?.addView(overlayView, params) } catch (t: Throwable) {
-            Log.e("CallOverlayService", "addView failed", t)
+        try {
+            windowManager = getSystemService(WINDOW_SERVICE) as? WindowManager
+            if (windowManager == null) {
+                Log.e("CallOverlayService", "WindowManager is null")
+                return
+            }
+            windowManager?.addView(overlayView, params)
+        } catch (t: Throwable) {
+            Log.e("CallOverlayService", "addView failed: ${t.message}", t)
+            overlayView = null
         }
     }
 
@@ -184,15 +206,40 @@ class CallOverlayService : Service() {
     }
 
     private fun removeOverlayAndStop() {
-        overlayView?.let { v -> try { windowManager?.removeView(v) } catch (_: Exception) {} }
-        overlayView = null
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) stopForeground(Service.STOP_FOREGROUND_REMOVE)
-        else @Suppress("DEPRECATION") stopForeground(true)
-        stopSelf()
+        try {
+            overlayView?.let { v ->
+                try {
+                    windowManager?.removeView(v)
+                } catch (e: Exception) {
+                    Log.e("CallOverlayService", "Error removing overlay: ${e.message}")
+                }
+            }
+            overlayView = null
+            windowManager = null
+            
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    stopForeground(Service.STOP_FOREGROUND_REMOVE)
+                } else {
+                    @Suppress("DEPRECATION")
+                    stopForeground(true)
+                }
+            } catch (e: Exception) {
+                Log.e("CallOverlayService", "Error stopping foreground: ${e.message}")
+            }
+            
+            stopSelf()
+        } catch (e: Exception) {
+            Log.e("CallOverlayService", "Error in removeOverlayAndStop: ${e.message}", e)
+        }
     }
 
     override fun onDestroy() {
-        try { removeOverlayAndStop() } catch (_: Throwable) {}
+        try {
+            removeOverlayAndStop()
+        } catch (e: Throwable) {
+            Log.e("CallOverlayService", "Error in onDestroy: ${e.message}", e)
+        }
         super.onDestroy()
     }
 

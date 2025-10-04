@@ -39,9 +39,6 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
   DateTime? _lastCapAt;
   PhoneStateStatus? _lastStatus;
 
-  // ✅ Companion (keep-alive) status
-  bool? _companionOk;
-  bool _checkingCompanion = false;
 
   @override
   void initState() {
@@ -51,7 +48,6 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
     PhoneState.stream.listen(handleCall);
     getCallStateFromNative();
     _loadAndSendStoredCallInfo();
-    _refreshCompanionStatus();
   }
 
   Future<void> _oneTimeSetup() async {
@@ -117,34 +113,6 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
     }
   }
 
-  // -------------------- Companion (Keep-Alive) helpers --------------------
-
-  Future<void> _refreshCompanionStatus() async {
-    setState(() => _checkingCompanion = true);
-    try {
-      final ok = await _ch.invokeMethod('companionStatus');
-      if (mounted) setState(() => _companionOk = (ok == true));
-    } catch (e) {
-      debugPrint('❌ companionStatus error: $e');
-      if (mounted) setState(() => _companionOk = null);
-    } finally {
-      if (mounted) setState(() => _checkingCompanion = false);
-    }
-  }
-
-  Future<void> _ensureCompanionAssociation() async {
-    try {
-      await _ch.invokeMethod('ensureCompanionAssociation');
-      // chooser se wapas aane par resume trigger hoga → status refresh wahan bhi
-    } catch (e) {
-      debugPrint('❌ ensureCompanionAssociation error: $e');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Companion association failed: $e')),
-      );
-    }
-  }
-
   // -------------------- Lifecycle --------------------
 
   @override
@@ -158,7 +126,6 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       getCallStateFromNative();
       requestPermissions();
-      _refreshCompanionStatus(); // ✅ chooser close ke baad yahan update
       setState(() {});
     }
   }
@@ -198,19 +165,6 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
   Future<void> requestPermissions() async {
     final phoneStatus = await Permission.phone.request();
     final contactsStatus = await Permission.contacts.request();
-
-    // (Optional) Android 12+ BT perms — native side bhi request karta hai,
-    // but asking here can improve UX on some ROMs.
-    if (await Permission.bluetoothScan.isDenied) {
-      await Permission.bluetoothScan.request();
-    }
-    if (await Permission.bluetoothConnect.isDenied) {
-      await Permission.bluetoothConnect.request();
-    }
-    // Pre-12 scan needs location sometimes:
-    if (await Permission.locationWhenInUse.isDenied) {
-      await Permission.locationWhenInUse.request();
-    }
 
     setState(() {
       granted = phoneStatus.isGranted && contactsStatus.isGranted;
@@ -332,14 +286,6 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
         return Scaffold(
           backgroundColor: Colors.black,
           appBar: AppBar(
-            actions: [
-              _companionBadge(),
-              const SizedBox(width: 8),
-              const Padding(
-                padding: EdgeInsets.only(right: 8),
-                child: Text("v0.23"),
-              ),
-            ],
             leading: IconButton(
               icon: const Icon(Icons.settings, color: Colors.white),
               onPressed: () => Navigator.push(
@@ -366,81 +312,19 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
                     onOpenOverlay: openOverlaySettings,
                     onOpenAccessibility: _openAccessibilitySettingsFromNative,
                   )
-                : SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                : Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        // avatar / lottie
-                        Container(
-                          width: 120,
-                          height: 120,
-                          decoration: BoxDecoration(
-                            color: Colors.grey[300],
-                            shape: BoxShape.circle,
-                          ),
-                          child: Lottie.asset(
-                            callStatus == PhoneStateStatus.CALL_INCOMING
-                                ? 'assets/call.json'
-                                : 'assets/user icon.json',
+                        const Text(
+                          "Version 0.34",
+                          style: TextStyle(
+                            color: Colors.red,
+                            fontSize: 32,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
-                        const SizedBox(height: 10),
-                        if (callerName != null)
-                          Text(
-                            callerName!,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              color: Colors.white70,
-                            ),
-                          ),
-                        const SizedBox(height: 14),
-
-                        // history button
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 23, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: const Color(0xff009688),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: TextButton(
-                            onPressed: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (context) => ScreenshotResultView()),
-                            ),
-                            child: const Text(
-                              'View Call History',
-                              style: TextStyle(color: Colors.white, fontSize: 12),
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 16),
-
-                        // ✅ Keep Alive (Companion) CTA
-                        if (_checkingCompanion)
-                          const Padding(
-                            padding: EdgeInsets.only(bottom: 8),
-                            child: CircularProgressIndicator(),
-                          ),
-                        if (_companionOk == true)
-                          _chip('Keep-Alive Active', Colors.greenAccent.shade400,
-                              const TextStyle(color: Colors.white))
-                        else
-                          ElevatedButton.icon(
-                            onPressed: _ensureCompanionAssociation,
-                            icon: const Icon(Icons.watch),
-                            label: const Text('Keep Alive (Pair Companion Device)'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.blueGrey,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                            ),
-                          ),
-
-                        const SizedBox(height: 12),
-
-                        // Accessibility quick enable hint
+                        const SizedBox(height: 40),
                         FutureBuilder<bool>(
                           future: _isAccessibilityEnabledFromNative(),
                           builder: (context, snapshot) {
@@ -448,7 +332,17 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
                             if (!enabled) {
                               return ElevatedButton(
                                 onPressed: _openAccessibilitySettingsFromNative,
-                                child: const Text('Enable Accessibility Service'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.blueGrey,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 30,
+                                    vertical: 15,
+                                  ),
+                                ),
+                                child: const Text(
+                                  'Enable Accessibility Service',
+                                  style: TextStyle(color: Colors.white),
+                                ),
                               );
                             }
                             return const SizedBox.shrink();
@@ -463,28 +357,6 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _companionBadge() {
-    if (_checkingCompanion) {
-      return const Padding(
-        padding: EdgeInsets.only(right: 10),
-        child: SizedBox(
-          height: 20,
-          width: 20,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-      );
-    }
-    if (_companionOk == true) {
-      return Padding(
-        padding: const EdgeInsets.only(right: 8),
-        child: _chip('Keep-Alive ON', Colors.green, const TextStyle(color: Colors.white, fontSize: 12)),
-      );
-    }
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: _chip('Keep-Alive OFF', Colors.orange, const TextStyle(color: Colors.white, fontSize: 12)),
-    );
-  }
 
   String _formatPhoneNumber(String number) {
     if (number.length == 10) {

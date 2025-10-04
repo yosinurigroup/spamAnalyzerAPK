@@ -83,7 +83,13 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
-        try { unregisterReceiver(captureResultReceiver) } catch (_: Throwable) {}
+        try {
+            captureResultReceiver?.let { unregisterReceiver(it) }
+            captureResultReceiver = null
+        } catch (e: Throwable) {
+            Log.e("MainActivity", "Error unregistering receiver: ${e.message}")
+        }
+        channel = null
         super.onDestroy()
     }
 
@@ -156,8 +162,6 @@ class MainActivity : FlutterActivity() {
                     result.success(info)
                 }
 
-<<<<<<< HEAD
-=======
                 // --------- Shizuku helpers ----------
                 "shizukuStatus" -> {
                     val running = ShizukuGrant.isRunning()
@@ -206,14 +210,11 @@ class MainActivity : FlutterActivity() {
                     result.success(true)
                 }
 
->>>>>>> ceb9980ba2af4edcdf811e5bfbbe1193ce56f153
                 else -> result.notImplemented()
             }
         }
     }
 
-<<<<<<< HEAD
-=======
     // ---------- Activity result for CDM chooser ----------
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
@@ -222,9 +223,14 @@ class MainActivity : FlutterActivity() {
 
     // ---------- helpers ----------
 
->>>>>>> ceb9980ba2af4edcdf811e5bfbbe1193ce56f153
     private fun triggerAccCaptureSmart(): Boolean {
         return try {
+            if (!isAccessibilityOn()) {
+                Log.w("MainActivity", "Accessibility service not enabled")
+                Toast.makeText(this, "Please enable accessibility service", Toast.LENGTH_SHORT).show()
+                return false
+            }
+
             val svc = AssistCaptureService.instance
             if (svc != null) {
                 AssistCaptureService.requestCapture()
@@ -233,11 +239,19 @@ class MainActivity : FlutterActivity() {
             } else {
                 val action = AssistCaptureService.ACTION_CAPTURE_NOW
                 // explicit to our receiver
-                sendBroadcast(Intent(action).apply {
-                    setClassName(packageName, "com.example.spam_analyzer_v6.CaptureTriggerReceiver")
-                })
+                try {
+                    sendBroadcast(Intent(action).apply {
+                        setClassName(packageName, "com.example.spam_analyzer_v6.CaptureTriggerReceiver")
+                    })
+                } catch (e: Exception) {
+                    Log.e("MainActivity", "Error sending explicit broadcast: ${e.message}")
+                }
                 // fallback: package-scoped
-                sendBroadcast(Intent(action).setPackage(packageName))
+                try {
+                    sendBroadcast(Intent(action).setPackage(packageName))
+                } catch (e: Exception) {
+                    Log.e("MainActivity", "Error sending package broadcast: ${e.message}")
+                }
                 Toast.makeText(this, "Capturing (broadcast)…", Toast.LENGTH_SHORT).show()
                 true
             }
@@ -281,13 +295,21 @@ class MainActivity : FlutterActivity() {
             val f2 = cn.flattenToString()
             if (enabled.split(':').any { s -> s.equals(f1, true) || s.equals(f2, true) }) return true
 
-            val am = getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
+            val am = getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager
+            if (am == null) {
+                Log.e("MainActivity", "AccessibilityManager is null")
+                return false
+            }
+            
             val list = am.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_GENERIC)
-            list.any { svc ->
+            list?.any { svc ->
                 val si = svc.resolveInfo?.serviceInfo
                 si?.packageName == packageName && si?.name == AssistCaptureService::class.java.name
-            }
-        } catch (_: Throwable) { false }
+            } ?: false
+        } catch (e: Throwable) {
+            Log.e("MainActivity", "Error checking accessibility: ${e.message}", e)
+            false
+        }
     }
 
     private fun scanScreenshotDir(): List<File> {
